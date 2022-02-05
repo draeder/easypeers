@@ -1,0 +1,31 @@
+{
+  "name": "easypeers",
+  "version": "1.0.0",
+  "description": "Easy peer connections",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/draeder/easypeers.git"
+  },
+  "keywords": [
+    "p2p",
+    "decentralization",
+    "webtorrent",
+    "webrtc"
+  ],
+  "author": "Daniel Raeder",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/draeder/easypeers/issues"
+  },
+  "homepage": "https://github.com/draeder/easypeers#readme",
+  "dependencies": {
+    "node-all-paths": "^1.0.3",
+    "node-dijkstra": "^2.5.0",
+    "torrent-discovery": "^9.4.7",
+    "wrtc": "^0.4.7"
+  }
+}

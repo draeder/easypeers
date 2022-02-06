@@ -23,8 +23,6 @@
   },
   "homepage": "https://github.com/draeder/easypeers#readme",
   "dependencies": {
-    "node-all-paths": "^1.0.3",
-    "node-dijkstra": "^2.5.0",
     "torrent-discovery": "^9.4.7",
     "wrtc": "^0.4.7"
   }

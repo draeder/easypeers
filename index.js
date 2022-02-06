@@ -16,8 +16,8 @@ const Easypeers = function(identifier){
   easypeers.identifier = crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
   easypeers.address = crypto.randomBytes(20).toString('hex')
   easypeers.connections = 0
-  easypeers.timeout = 5
-  easypeers.maxPeers = 2
+  easypeers.timeout = 5 // seconds
+  easypeers.maxPeers = 5
   easypeers.debug === true
 
   let opts = {
@@ -35,24 +35,31 @@ const Easypeers = function(identifier){
   }
   
   if(!process.browser && !opts.port) process.browser = ' '//'hack for torrent-discovery webrtc-only in node
+  
+  let peers = {}
   let discovery = new Discovery(opts)
 
-  let peers = {}
-  discovery.connections = []
-  discovery.routes = {}
+  let connections = []
+  let routes = {}
 
   let last
+
   discovery.on('peer', (peer, source) => {
+    if(Object.keys(peers).length >= easypeers.maxPeers){
+      console.log('Time to create a new instance')
+      opts.infoHash = crypto.createHash('sha1').update(PREFIX+identifier+1).digest().toString('hex')
+      discovery = new Discovery(opts)
+    }
     peers[peer.id] = peer
-    if(!discovery.connections.includes(peer.id)){
-      discovery.connections.push(peer.id)
+    if(!connections.includes(peer.id)){
+      connections.push(peer.id)
       easypeers.connections = Object.keys(peers).length
       easypeers.emit('connection', peer.id)
     }
 
     peer.once('close', ()=> {
       if(last === peer.id) return
-      discovery.connections.splice(discovery.connections.indexOf(peer.id))
+      connections.splice(connections.indexOf(peer.id))
       delete peers[peer.id]
       easypeers.connections = Object.keys(peers).length
       easypeers.emit('disconnected', peer.id)
@@ -65,8 +72,7 @@ const Easypeers = function(identifier){
 
     //console.log(distance, Object.keys(peers).length)
     peers[peer.id].distance = distance
-
-    discovery.routes[peer.id] = distance
+    routes[peer.id] = distance
     //console.log(discovery.routes)
 
     let k = Object.keys(peers)
@@ -110,6 +116,9 @@ const Easypeers = function(identifier){
         if(data.connections){
           console.log(Object.keys(peers))
           console.log(easypeers.connections)
+        }
+        if(data.peers){
+          console.log(Object.keys(peers))
         }
       }
       catch{}

@@ -102,11 +102,6 @@ const Easypeers = function(identifier, args){
 
         // Send messages
         if (handshake.m && handshake.m.sw_easypeers) {
-
-          setInterval(()=>{
-            //wire.extended('sw_easypeers', 'ping:'+wire.peerId+':'+new Date().getTime())
-          },1000)
-
           if(typeof window === 'undefined'){
             process.stdout.on('data', data => {
               sendMessage(data)

@@ -88,62 +88,62 @@ const Easypeers = function(identifier, args){
           })
           if(Math.round(spare.length * easypeers.coverage) === 1 && torrent.numPeers <= easypeers.maxPeers + Math.round(spare.length * 0.3)+1) {
             wire[wire.peerId]._writableState.emitClose = true
-          }
-          else {
+          } else {
+            wire[wire.peerId].destroy()
             delete wire[wire.peerId]
             delete wires[wire.peerId]
-            wire.destroy()
           }
         }
         seen[wire.peerId] = {when: new Date().getTime()}
       }
-      wire.on('close', ()=>{
-        if(torrent.numPeers === 0){
-          torrent.announce[opts.announce]
-        }
-        if(torrent & torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
-          torrent.announce[opts.announce]
-        }
-        easypeers.peerCount = torrent.numPeers
-        if(wire._writableState.emitClose && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
-        easypeers.emit('disconnect', wire.peerId)
-        delete wire[wire.peerId]
-        delete wires[wire.peerId]
-      })
       this.onExtendedHandshake = (handshake) => {
         if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (2 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
+
         // Send messages
         if (handshake.m && handshake.m.sw_easypeers) {
+
+          setInterval(()=>{
+            //wire.extended('sw_easypeers', 'ping:'+wire.peerId+':'+new Date().getTime())
+          },1000)
+
           if(typeof window === 'undefined'){
             process.stdout.on('data', data => {
-              try{
-                data = data.split(':')
-                if(data[1] !== easypeers.address) return
-                else
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-              catch{
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
+              sendMessage(data)
             })
           } else {
             easypeers.send = (data) =>{
-              console.log('does this work?', data)
-              wire[wire.peerId].extended('sw_easypeers', data)
-              try{
-                data = data.split(':')
-                if(data[1] !== easypeers.address) return
-                else
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-              catch{
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
+              sendMessage(data)
             }
+          }
+          let sendMessage = (data) =>{
+            try{
+              data = data.split(':')
+              if(data[1] !== easypeers.address) return
+            } catch{}
+            //if(wire[wire.peerId])
+            wire.extended('sw_easypeers', data)
           }
         }
       }
+
+      wire.on('close', ()=>{
+        console.log('wire closed', torrent.numPeers, wire.peerId)
+        if(torrent.numPeers === 0){
+          torrent.resume()
+          setInterval(()=>{
+            torrent.announce[opts.announce]
+          }, 5 * 1000)
+        } else
+        if(torrent && torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
+          torrent.resume()
+          torrent.announce[opts.announce]
+        }
+        easypeers.peerCount = torrent.numPeers
+        if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
+        easypeers.emit('disconnect', wire.peerId)
+      })
+
       this.onMessage = function(message) {
         message = message.toString().trim()
         try{

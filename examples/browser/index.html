@@ -48496,7 +48496,7 @@ function extend() {
 
 </script>
 <script>
-const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: -1})
+const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
 console.log('My address:', easypeers.address)
 easypeers.on('connect', peer => {
   console.log('Peeer connected!', peer)

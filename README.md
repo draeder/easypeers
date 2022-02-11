@@ -22,7 +22,7 @@ Use the terminal to send messages: `> message`
 
 ### Browser
 ```js
-> /path/to/easypeers/examples/browser/index.html
+> file:///path/to/easypeers/examples/browser/index.html
 ```
 Use the console to send messages: `easypeers.send('message')`
 

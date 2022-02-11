@@ -11,7 +11,7 @@ Connect peers together based on a shared topic and send direct or broadcast mess
 Works in both node and the browser!
 
 ## Example
-Don't mind the clutter here. 
+Don't mind the clutter here. This is a work in progress.
 ### Node
 ```js
 > node examples/example.js
@@ -22,7 +22,7 @@ Use the terminal to send messages: `> message`
 
 ### Browser
 ```js
-> /path/to/repo/easypeers/examples/browser/index.html
+> /path/to/easypeers/examples/browser/index.html
 ```
 Use the console to send messages: `easypeers.send('message')`
 
@@ -41,6 +41,10 @@ easypeers.on('disconnect', peer => {
 ```
 
 ## Partial Mesh
-Partial mesh connectivity is determined using the `opts.coverage` ratio and `opts.maxPeers` number passed into the Easypeers constructor. It uses a simple distance algorithm that checks seen peers for how 'close' those peers are, then takes a sample of those peers based on the passed in `opts.coverage` ratio. If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
+Partial mesh connectivity is determined using the `opts.coverage` ratio and `opts.maxPeers` number passed into the Easypeers constructor. 
+
+It uses a simple distance algorithm that checks seen peers for how 'close' those peers are, then takes a sample of those peers based on the passed in `opts.coverage` ratio. 
+
+If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
 
 ## Gossip Protocol

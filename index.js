@@ -1,163 +1,179 @@
 const crypto = require('crypto')
-const EventEmitter = require('events').EventEmitter
-const Discovery = require('torrent-discovery')
+const { EventEmitter } = require('events')
+const WebTorrent = require('webtorrent-hybrid')
 const wrtc = require('wrtc')
 
-const Easypeers = function(identifier){
+const PREFIX = 'easypeers-'
+
+const Easypeers = function(identifier, args){
   const easypeers = this
+  !args ? easypeers.opts = {} : easypeers.opts = {...args}
+
   const events = new EventEmitter()
-  const PREFIX = 'easypeers-'
   easypeers.on = events.on.bind(events)
   easypeers.once = events.once.bind(events)
   easypeers.emit = events.emit.bind(events)
-  easypeers.send = () => {}
+  easypeers.send = (data) => {easypeers.emit('_send', data)}
   easypeers.off = events.off.bind(events)
 
+  easypeers.maxPeers = easypeers.opts.maxPeers
+  easypeers.coverage = easypeers.opts.coverage || 0.3
+  easypeers.debug = easypeers.opts.debug || false
+  easypeers.timeout = easypeers.opts.timeout || 30 * 1000
   easypeers.identifier = crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
   easypeers.address = crypto.randomBytes(20).toString('hex')
-  easypeers.connections = 0
-  easypeers.timeout = 5 // seconds
-  easypeers.maxPeers = 5
-  easypeers.debug === true
+  easypeers.swarmHashes = []
 
+  let wires = {}
+  let seen = {}
+
+  let client = new WebTorrent({dht:false, lsd:false, peerId:easypeers.address})
+  
   let opts = {
-    infoHash: this.identifier,
-    peerId: this.address,
-    lsd: false,
-    dht: false,
-    //port: 9021,
-    tracker: { wrtc },
+    infoHash: easypeers.identifier,
+    peerId: easypeers.address,
+    wrtc: wrtc,
     announce: [
       'wss://tracker.peer.ooo',
-      'wss://tracker.openwebtorrent.com',
-      'wss://tracker.btorrent.xyz'
-    ]
+      'wss://tracker.openwebtorrent.com'
+    ],
+    port: process ? easypeers.opts.port || 6881 : undefined
   }
   
-  if(!process.browser && !opts.port) process.browser = ' '//'hack for torrent-discovery webrtc-only in node
-  
-  let peers = {}
-  let discovery = new Discovery(opts)
+  let torrent = client.add(opts)
 
-  let connections = []
-  let routes = {}
-
-  let last
-
-  discovery.on('peer', (peer, source) => {
-    if(Object.keys(peers).length >= easypeers.maxPeers){
-      console.log('Time to create a new instance')
-      opts.infoHash = crypto.createHash('sha1').update(PREFIX+identifier+1).digest().toString('hex')
-      discovery = new Discovery(opts)
-    }
-    peers[peer.id] = peer
-    if(!connections.includes(peer.id)){
-      connections.push(peer.id)
-      easypeers.connections = Object.keys(peers).length
-      easypeers.emit('connection', peer.id)
-    }
-
-    peer.once('close', ()=> {
-      if(last === peer.id) return
-      connections.splice(connections.indexOf(peer.id))
-      delete peers[peer.id]
-      easypeers.connections = Object.keys(peers).length
-      easypeers.emit('disconnected', peer.id)
-      peer.removeAllListeners()
-      peer.destroy()
-      last = peer.id
-    })
-
-    let distance = Math.abs(parseInt(this.address, 16) - parseInt(peer.id, 16))
-
-    //console.log(distance, Object.keys(peers).length)
-    peers[peer.id].distance = distance
-    routes[peer.id] = distance
-    //console.log(discovery.routes)
-
-    let k = Object.keys(peers)
-    let distances = k.map(d => peers[d].distance)
-    let closest = Math.min(...distances)
-    let furthest = Math.max(...distances)
-
-    let far = Object.keys(peers).filter(peer => { 
-      if(peers[peer].distance === furthest) return peer
-    })[0]
-    let near = Object.keys(peers).filter(peer => { 
-      if(peers[peer].distance === closest) return peer
-    })[0]
-
-    peer.on('data', data => {
-      try{
-        data = JSON.parse(data)
-        //console.log(data)
-        easypeers.emit('message', data)
+  client.on('ready', () => {
+    console.log("ready")
+    setTimeout(()=>{
+      if(Object.keys(seen).length === 0){
+        torrent.destroy()
+        torrent = client.add(opts)
       }
-      catch{
-        //console.log(data.toString())
-        easypeers.emit('message', data.toString())
-      }
-    })
-    easypeers.connections = Object.keys(peers).length
+    },easypeers.timeout * 1.5)
+  })
+  client.on('warning', err => {
+    console.log('Warning', err)
+  })
+  client.on('error', err => {
+    console.log('Error', err)
   })
 
-  discovery.on('warning', err => {
-    console.warn('Discovery warning:', err)
-  })
-  discovery.on('error', err => {
-    console.error('Discovery error:', err)
-  })
-
-  easypeers.send = (address, data) => {
-    if(peers != {}){
-      if(!data) data = address
-      try{
-        data = JSON.parse(data)
-        if(data.connections){
-          console.log(Object.keys(peers))
-          console.log(easypeers.connections)
-        }
-        if(data.peers){
-          console.log(Object.keys(peers))
-        }
-      }
-      catch{}
-      if(address === data){
-        // broadcast message
-        for(p in peers){
-          try{ peers[p].send(data)} catch {} // no peers
-        }
-      } else { 
-        // direct message
-        try{ peers[address].send(data) } 
-        catch{
-          // ask peers if they have this address and relay through one of those peers
-        }
-      }
+  torrent.on("wire", function(wire) {
+    easypeers.peerCount = torrent.numPeers
+    if(torrent.numPeers > easypeers.maxPeers && easypeers.coverage === -1){
+      wire.destroy()
+      return
     } else {
-      console.log('No peers connected')
-    }
-  }
-
-  // Suppress extraneous simple-peer errors unless easypeers.debug === true
-  process.on('uncaughtException', function (err) {
-    let codes = [
-      'ERR_WEBRTC_SUPPORT',
-      'ERR_CREATE_OFFER',
-      'ERR_CREATE_ANSWER',
-      'ERR_SET_LOCAL_DESCRIPTION',
-      'ERR_SET_REMOTE_DESCRIPTION',
-      'ERR_ADD_ICE_CANDIDATE',
-      'ERR_ICE_CONNECTION_FAILURE',
-      'ERR_SIGNALING',
-      'ERR_DATA_CHANNEL',
-      'ERR_CONNECTION_FAILURE'
-    ]
-    if(easypeers.debug === true) console.error(err)
-    if(!codes.includes(err.code)){
-      console.error(err)
+      wire.use(_easypeers(wire, wire.peerId))
     }
   })
+
+  setInterval(()=>{
+    torrent.announce[opts.announce]
+  }, easypeers.timeout)
+
+  let _easypeers = () =>{
+    let swEasypeers = function(wire) {
+      wire._writableState.emitClose = false
+      wire[wire.peerId] = wire
+      wire[wire.peerId].extendedHandshake.keys = 'SEA Pairs' // establish SEA pairs here
+      this.onHandshake = (infoHash, peerId, extensions) => {
+        wires[wire.peerId] = wire.peerId
+        // partial mesh
+        
+        if(torrent.numPeers > easypeers.maxPeers){
+          let spares = Object.keys(wires)
+          let spare = spares.filter(v => {
+            return v < easypeers.address
+          })
+          if(Math.round(spare.length * easypeers.coverage) === 1 && torrent.numPeers <= easypeers.maxPeers + Math.round(spare.length * 0.3)+1) {
+            wire[wire.peerId]._writableState.emitClose = true
+          }
+          else {
+            delete wire[wire.peerId]
+            delete wires[wire.peerId]
+            wire.destroy()
+          }
+        }
+        seen[wire.peerId] = {when: new Date().getTime()}
+      }
+      wire.on('close', ()=>{
+        if(torrent.numPeers === 0){
+          torrent.announce[opts.announce]
+        }
+        if(torrent & torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
+          torrent.announce[opts.announce]
+        }
+        easypeers.peerCount = torrent.numPeers
+        if(wire._writableState.emitClose && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
+        easypeers.emit('disconnect', wire.peerId)
+        delete wire[wire.peerId]
+        delete wires[wire.peerId]
+      })
+      this.onExtendedHandshake = (handshake) => {
+        if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (2 * 60 * 1000))
+        easypeers.emit('connect', wire.peerId)
+        // Send messages
+        if (handshake.m && handshake.m.sw_easypeers) {
+          if(typeof window === 'undefined'){
+            process.stdout.on('data', data => {
+              try{
+                data = data.split(':')
+                if(data[1] !== easypeers.address) return
+                else
+                wire[wire.peerId].extended('sw_easypeers', data)
+              }
+              catch{
+                wire[wire.peerId].extended('sw_easypeers', data)
+              }
+            })
+          } else {
+            easypeers.send = (data) =>{
+              console.log('does this work?', data)
+              wire[wire.peerId].extended('sw_easypeers', data)
+              try{
+                data = data.split(':')
+                if(data[1] !== easypeers.address) return
+                else
+                wire[wire.peerId].extended('sw_easypeers', data)
+              }
+              catch{
+                wire[wire.peerId].extended('sw_easypeers', data)
+              }
+            }
+          }
+        }
+      }
+      this.onMessage = function(message) {
+        message = message.toString().trim()
+        try{
+          message = message.split(':')
+          if(message[0]==='address') console.log(easypeers.address) 
+          else
+          if(message[0]==='peers') console.log(torrent.numPeers)
+          else
+          if(message[0]==='seen') console.log(seen)
+          else
+          if(message[0]==='direct' &&  Object.keys(seen).includes(message[1])){
+            console.log('have peer, sending..... ', message[2])
+          } else
+          if(message.length === 1){
+            easypeers.emit('message', message)
+          } else 
+          if (message[1] === easypeers.address){
+            easypeers.emit('message', message)
+          } else {
+            easypeers.emit('message', message)
+          }
+          //console.log('don\'t have peer, not sending')
+          
+        }
+        catch(err){console.log(err)}        
+      }
+    }
+    swEasypeers.prototype.name = 'sw_easypeers'
+    return swEasypeers
+  }
 }
 
 module.exports = Easypeers

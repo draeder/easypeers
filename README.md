@@ -1,12 +1,46 @@
 # Easypeers
-> Easy serverless WebRTC mesh using WebTorrent
+> Easy *serverless* swarms of WebRTC peers over WebTorrent
 
-Easypeers connects peers together based on a shared topic that is announced to WebTorrent bootstrap servers. It supports broadcast and direct messages over a gossip protocol that relays messages to indirectly connected peers.
+Connect peers together based on a shared topic and send direct or broadcast messages using a gossip protocol.
 
-Works in the node and the browser!
+- Partial or full-mesh
+- Self-healing swarms when peer count is unlimited
+- Total peer count of the swarm can unlimited or limited
+- Includes a partial mesh coverage ratio
 
-# Security
+Works in both node and the browser!
 
+## Example
+Don't mind the clutter here. 
+### Node
+```js
+> node examples/example.js
 
-# Easypeers Gossip Protocol
-The gossip protocol is a basic 'distance' algorithm to determine how to get from peer A to peer Z. When peer A wants to reach peer Z, but is only connected to peer B, it asks peer B if it has seen peer Z. If peer B hasn't seen peer Z, it asks the peers it is connected to where peer Z is. Each peer responds with the distance to peer Z, or the default distance `Infinity` if it hasn't seen that peer. If all peers respond with `Infinity`, the peer is not part of the swarm and is considered dead.
+const Easypeers = require('..')
+```
+Use the terminal to send messages: `> message`
+
+### Browser
+```js
+> /path/to/repo/easypeers/examples/browser/index.html
+```
+Use the console to send messages: `easypeers.send('message')`
+
+```js
+const easypeers = new Easypeers('Testing 123454', {maxPeers: 3, coverage: -1})
+console.log('My address:', easypeers.address)
+easypeers.on('message', message => {
+  console.log(message)
+})
+easypeers.on('connect', peer => {
+  console.log('Peeer connected!', peer)
+})
+easypeers.on('disconnect', peer => {
+  console.log('Peeer disconnected!', peer)
+})
+```
+
+## Partial Mesh
+Partial mesh connectivity is determined using the `opts.coverage` ratio and `opts.maxPeers` number passed into the Easypeers constructor. It uses a simple distance algorithm that checks seen peers for how 'close' those peers are, then takes a sample of those peers based on the passed in `opts.coverage` ratio. If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
+
+## Gossip Protocol

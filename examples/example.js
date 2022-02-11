@@ -8,7 +8,7 @@ const Easypeers = require('..')
 // In that case, the total number of members of the swarm will be n(n+1) where n = maxPeers
 // Note: this is full mesh
 // coverage = 0.3 with maxPeers = 6
-const easypeers = new Easypeers('Testing 123454', {maxPeers: 3, coverage: -1})
+const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
 console.log('My address:', easypeers.address)
 easypeers.on('message', message => {
   console.log(message)

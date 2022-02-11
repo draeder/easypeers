@@ -27,7 +27,7 @@ Use the terminal to send messages: `> message`
 Use the console to send messages: `easypeers.send('message')`
 
 ```js
-const easypeers = new Easypeers('Testing 123454', {maxPeers: 3, coverage: -1})
+const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
 console.log('My address:', easypeers.address)
 easypeers.on('message', message => {
   console.log(message)

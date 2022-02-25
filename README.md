@@ -3,8 +3,8 @@
 
 Connect peers together based on a shared topic and send direct or broadcast messages using a gossip protocol.
 
-- Partial or full-mesh
-- Self-healing swarms when peer count is unlimited
+- Self-healing
+- Full or partial mesh
 - Total peer count of the swarm can unlimited or limited
 - Includes a partial mesh coverage ratio
 
@@ -18,13 +18,13 @@ Don't mind the clutter here. This is a work in progress.
 
 const Easypeers = require('..')
 ```
-Use the terminal to send messages: `> message`
+Use the terminal to send messages: `> your message`
 
 ### Browser
 ```js
 > file:///path/to/easypeers/examples/browser/index.html
 ```
-Use the console to send messages: `easypeers.send('message')`
+Use the browser console to send messages: `easypeers.send('your message')`
 
 ```js
 const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
@@ -47,4 +47,5 @@ It uses a simple distance algorithm that checks seen peers for how 'close' those
 
 If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
 
-## Gossip Protocol
+## :construction: Gossip Protocol :construction:
+ICE failures interrupted my progress with developing the Gossip protocol, but it is back underway after seeing things work better after a router upgrade.

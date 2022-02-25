@@ -116,14 +116,13 @@ const Easypeers = function(identifier, args){
               data = data.split(':')
               if(data[1] !== easypeers.address) return
             } catch{}
-            //if(wire[wire.peerId])
-            wire.extended('sw_easypeers', data)
+            if(wire[wire.peerId]) wire[wire.peerId].extended('sw_easypeers', data)
+            else wire.extended('sw_easypeers', data)
           }
         }
       }
 
       wire.on('close', ()=>{
-        console.log('wire closed', torrent.numPeers, wire.peerId)
         if(torrent.numPeers === 0){
           torrent.resume()
           setInterval(()=>{
@@ -151,6 +150,7 @@ const Easypeers = function(identifier, args){
           else
           if(message[0]==='direct' &&  Object.keys(seen).includes(message[1])){
             console.log('have peer, sending..... ', message[2])
+
           } else
           if(message.length === 1){
             easypeers.emit('message', message)

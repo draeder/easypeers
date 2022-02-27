@@ -171,7 +171,6 @@ const Easypeers = function(identifier, args){
     // convert to JSON & send
     try{
       message = JSON.parse(data)
-      message.when = new Date().getTime()
       message.have = Object.keys(wires)
 
       if(message.to && message.to === easypeers.address) return
@@ -187,7 +186,6 @@ const Easypeers = function(identifier, args){
         from: easypeers.address,
         have: Object.keys(wires),
         message: data,
-        when: new Date().getTime()
       }
       wire.extended('sw_easypeers', JSON.stringify(message))
     }

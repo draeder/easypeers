@@ -1,4 +1,4 @@
-const Easypeers = require('..')
+const Easypeers = require('../index.js')
 
 // API testing
 // opts.coverage = ratio of max peers to connect; 0 = full mesh, 1 = limit to maxPeers, default = 1
@@ -10,8 +10,10 @@ const Easypeers = require('..')
 // coverage = 0.3 with maxPeers = 6
 const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
 console.log('My address:', easypeers.address)
+
 easypeers.on('message', message => {
-  console.log(message)
+  message = JSON.parse(message)
+  console.log(message.message)
 })
 easypeers.on('connect', peer => {
   console.log('Peeer connected!', peer)

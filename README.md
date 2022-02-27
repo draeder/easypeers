@@ -3,9 +3,9 @@
 
 Connect peers together based on a shared topic and send direct or broadcast messages using a gossip protocol.
 
-- Self-healing
+- Self-healing (WIP - looking into how to improve reconnection timing)
 - Full or partial mesh
-- Total peer count of the swarm can unlimited or limited
+- Total peer count of the swarm can be unlimited or limited
 - Includes a partial mesh coverage ratio
 
 Works in both node and the browser!
@@ -47,5 +47,7 @@ It uses a simple distance algorithm that checks seen peers for how 'close' those
 
 If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
 
-## :construction: Gossip Protocol :construction:
-ICE failures interrupted my progress with developing the Gossip protocol, but it is back underway after seeing things work better after a router upgrade.
+## Gossip Protocol
+- Gossip for broadcast messages is now working
+- :construction: Gossip for direct messages is underway
+> Note: the browser version may not contain these updates. You can test yourself by browserifying index.js, though

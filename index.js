@@ -34,6 +34,7 @@ const Easypeers = function(identifier, args){
     peerId: easypeers.address,
     wrtc: wrtc,
     announce: [
+      easypeers.opts.tracker ? easypeers.opts.tracker : '',
       'wss://tracker.peer.ooo',
       'wss://tracker.openwebtorrent.com'
     ],
@@ -64,7 +65,9 @@ const Easypeers = function(identifier, args){
       wire.destroy()
       return
     } else {
-      wire.use(_easypeers(wire, wire.peerId))
+      wire._writableState.emitClose = false
+      wire[wire.peerId] = wire
+      wire[wire.peerId].use(_easypeers(wire[wire.peerId]))
     }
   })
 
@@ -74,13 +77,10 @@ const Easypeers = function(identifier, args){
 
   let _easypeers = () =>{
     let swEasypeers = function(wire) {
-      wire._writableState.emitClose = false
-      wire[wire.peerId] = wire
       wire[wire.peerId].extendedHandshake.keys = 'SEA Pairs' // establish SEA pairs here
       this.onHandshake = (infoHash, peerId, extensions) => {
-        wires[wire.peerId] = wire.peerId
-        // partial mesh
-        
+        wires[wire.peerId] = wire
+        // partial mesh        
         if(torrent.numPeers > easypeers.maxPeers){
           let spares = Object.keys(wires)
           let spare = spares.filter(v => {
@@ -92,6 +92,7 @@ const Easypeers = function(identifier, args){
             wire[wire.peerId].destroy()
             delete wire[wire.peerId]
             delete wires[wire.peerId]
+            return
           }
         }
         seen[wire.peerId] = {when: new Date().getTime()}
@@ -99,26 +100,39 @@ const Easypeers = function(identifier, args){
       this.onExtendedHandshake = (handshake) => {
         if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (2 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
-
         // Send messages
         if (handshake.m && handshake.m.sw_easypeers) {
           if(typeof window === 'undefined'){
+            easypeers.send = data =>{
+              sendMessage(wire, data)
+            }
             process.stdout.on('data', data => {
-              sendMessage(data)
+              sendMessage(wire, data)
             })
           } else {
-            easypeers.send = (data) =>{
-              sendMessage(data)
+            easypeers.send = data =>{
+              sendMessage(wire, data)
             }
           }
-          let sendMessage = (data) =>{
-            try{
-              data = data.split(':')
-              if(data[1] !== easypeers.address) return
-            } catch{}
-            if(wire[wire.peerId]) wire[wire.peerId].extended('sw_easypeers', data)
-            else wire.extended('sw_easypeers', data)
+        }
+      }
+
+      this.onMessage = function(message) {
+        message = message.toString()
+        try{
+          message = message.substring(message.indexOf(':') + 1)
+          message = JSON.parse(message)
+          if(message.from === easypeers.address) return
+          if(message.to === easypeers.address) {
+            return easypeers.emit('_message', JSON.stringify(message))
           }
+          for(w in wires){
+            message.to = w
+            wires[w].extended('sw_easypeers', JSON.stringify(message))
+          }
+        }
+        catch (err){
+          //console.log(err)
         }
       }
 
@@ -137,37 +151,73 @@ const Easypeers = function(identifier, args){
         if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
         easypeers.emit('disconnect', wire.peerId)
       })
-
-      this.onMessage = function(message) {
-        message = message.toString().trim()
-        try{
-          message = message.split(':')
-          if(message[0]==='address') console.log(easypeers.address) 
-          else
-          if(message[0]==='peers') console.log(torrent.numPeers)
-          else
-          if(message[0]==='seen') console.log(seen)
-          else
-          if(message[0]==='direct' &&  Object.keys(seen).includes(message[1])){
-            console.log('have peer, sending..... ', message[2])
-
-          } else
-          if(message.length === 1){
-            easypeers.emit('message', message)
-          } else 
-          if (message[1] === easypeers.address){
-            easypeers.emit('message', message)
-          } else {
-            easypeers.emit('message', message)
-          }
-          //console.log('don\'t have peer, not sending')
-          
-        }
-        catch(err){console.log(err)}        
-      }
     }
+
     swEasypeers.prototype.name = 'sw_easypeers'
     return swEasypeers
+  }
+
+  // message deduplication when gossiping
+  let last
+  easypeers.on('_message', message => {
+    if(last === message) return
+    easypeers.emit('message', message)
+    last = message
+  })
+
+  let sendMessage = (wire, data) =>{
+    data = data.toString().trim()
+    let message = {}
+    // convert to JSON & send
+    try{
+      message = JSON.parse(data)
+      message.when = new Date().getTime()
+      message.have = Object.keys(wires)
+
+      if(message.to && message.to === easypeers.address) return
+      if(wire.peerId === message.to) wire.extended('sw_easypeers', JSON.stringify(message))
+      else {
+        message.type = 'gossip'
+        wire.extended('sw_easypeers', JSON.stringify(message))
+      }
+    }
+    catch (err) {
+      message = {
+        type: 'broadcast',
+        from: easypeers.address,
+        have: Object.keys(wires),
+        message: data,
+        when: new Date().getTime()
+      }
+      wire.extended('sw_easypeers', JSON.stringify(message))
+    }
+
+    /*
+    try{
+      data = data.toString().trim().split(':')
+      // broadcast message
+      if(data.length === 1) wire.extended('sw_easypeers', data[0])
+      // direct message
+      else if(data.length === 2) {
+        console.log(Object.keys(wires))
+        if(Object.keys(wires).includes(data[0]) && wire[data[0]]){
+          wire[data[0]].extended('sw_easypeers', data[1])
+        }
+        // relay message 
+        else {
+          data[2] = 'relay'
+          data = data.toString()
+          wire.extended('sw_easypeers', data)
+        }
+      }
+    } catch (err){
+      //console.log('there was an error', err)
+      wire.extended('sw_easypeers', data)
+      
+      if(wire[wire.peerId]) wire[wire.peerId].extended('sw_easypeers', data)
+      else wire.extended('sw_easypeers', data)
+      
+    }*/
   }
 }
 

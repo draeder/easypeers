@@ -45,12 +45,11 @@ const Easypeers = function(identifier, args){
 
   client.on('ready', () => {
     console.log("ready")
-    setTimeout(()=>{
+    setInterval(()=>{
       if(Object.keys(seen).length === 0){
-        torrent.destroy()
-        torrent = client.add(opts)
+        torrent.announce[opts.announce]
       }
-    },easypeers.timeout * 1.5)
+    }, 60 * 1000)
   })
   client.on('warning', err => {
     console.log('Warning', err)
@@ -98,7 +97,7 @@ const Easypeers = function(identifier, args){
         seen[wire.peerId] = {when: new Date().getTime()}
       }
       this.onExtendedHandshake = (handshake) => {
-        if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (2 * 60 * 1000))
+        if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (5 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
         // Send messages
         if (handshake.m && handshake.m.sw_easypeers) {
@@ -123,15 +122,14 @@ const Easypeers = function(identifier, args){
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
           if(message.from === easypeers.address) return
-          if(message.to === easypeers.address) {
-            return easypeers.emit('_message', JSON.stringify(message))
-          }
+          if(Object.keys(seen).length === 1) return easypeers.emit('_message', JSON.stringify(message))
+          if(message.to === easypeers.address) return easypeers.emit('_message', JSON.stringify(message))
+          else
           for(w in wires){
             message.to = w
             wires[w].extended('sw_easypeers', JSON.stringify(message))
           }
-        }
-        catch (err){
+        } catch (err){
           //console.log(err)
         }
       }
@@ -168,19 +166,36 @@ const Easypeers = function(identifier, args){
   let sendMessage = (wire, data) =>{
     data = data.toString().trim()
     let message = {}
-    // convert to JSON & send
+    try{
+      data = JSON.parse(data)
+      message = {
+        to: data.to,
+        from: data.from,
+        have: Object.keys(wires),
+        message: data.message
+      }
+      if(message.have.includes(data.to)) return wires[data.to].extended('sw_easypeers', JSON.stringify(message))
+    }
+    catch{
+      message = {
+        type: 'broadcast',
+        from: easypeers.address,
+        have: Object.keys(wires),
+        message: data
+      }
+      wire.extended('sw_easypeers', JSON.stringify(message))
+    }
+    /*
     try{
       message = JSON.parse(data)
       message.have = Object.keys(wires)
 
-      if(message.to && message.to === easypeers.address) return
-      if(wire.peerId === message.to) wire.extended('sw_easypeers', JSON.stringify(message))
-      else {
-        message.type = 'gossip'
-        wire.extended('sw_easypeers', JSON.stringify(message))
-      }
+      if(message.to && message.have.includes(message.to)) wire[message.to].extended('sw_easypeers', JSON.stringify(message))
+
+      wire.extended('sw_easypeers', JSON.stringify(message))
+      console.log('nope')
     }
-    catch (err) {
+    catch (err) {      
       message = {
         type: 'broadcast',
         from: easypeers.address,
@@ -189,6 +204,7 @@ const Easypeers = function(identifier, args){
       }
       wire.extended('sw_easypeers', JSON.stringify(message))
     }
+    */
   }
 }
 

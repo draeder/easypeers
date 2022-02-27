@@ -191,33 +191,6 @@ const Easypeers = function(identifier, args){
       }
       wire.extended('sw_easypeers', JSON.stringify(message))
     }
-
-    /*
-    try{
-      data = data.toString().trim().split(':')
-      // broadcast message
-      if(data.length === 1) wire.extended('sw_easypeers', data[0])
-      // direct message
-      else if(data.length === 2) {
-        console.log(Object.keys(wires))
-        if(Object.keys(wires).includes(data[0]) && wire[data[0]]){
-          wire[data[0]].extended('sw_easypeers', data[1])
-        }
-        // relay message 
-        else {
-          data[2] = 'relay'
-          data = data.toString()
-          wire.extended('sw_easypeers', data)
-        }
-      }
-    } catch (err){
-      //console.log('there was an error', err)
-      wire.extended('sw_easypeers', data)
-      
-      if(wire[wire.peerId]) wire[wire.peerId].extended('sw_easypeers', data)
-      else wire.extended('sw_easypeers', data)
-      
-    }*/
   }
 }
 

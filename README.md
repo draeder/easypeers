@@ -48,6 +48,6 @@ It uses a simple distance algorithm that checks seen peers for how 'close' those
 If the peers are 'close', they are kept. Even if the total number of peers exceeds the `opts.maxPeers` parameter. But only up to the number of peers found using the `opts.coverage` ratio.
 
 ## Gossip Protocol
-- Gossip for broadcast messages is now working
+- Gossip for broadcast messages is now mostly working (message deduplication is still an issue)
 - :construction: Gossip for direct messages is underway
 > Note: the browser version may not contain these updates. You can test yourself by browserifying index.js, though

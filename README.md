@@ -116,7 +116,7 @@ Stops listening for new messages
 ## `easypeers.identifier` [[string]]
 Set or return the configured swarm identifier. This must be a sha1 hash and is created by default from the passed in topic string.
 
-## `easypeers.address = crypto.randomBytes(20).toString('hex')`
+## `easypeers.address`
 Set or return the configured peer ID. This must be a sha1 hash and is created by default.
 
 ## `easypeers.maxPeers` [[integer]]

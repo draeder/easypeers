@@ -1,10 +1,11 @@
-<script>
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Easypeers = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 (function (process){(function (){
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent-hybrid')
 const wrtc = require('wrtc')
+
+EventEmitter.defaultMaxListeners = 100
 
 const PREFIX = 'easypeers-'
 
@@ -19,24 +20,24 @@ const Easypeers = function(identifier, args){
   easypeers.send = (data) => {easypeers.emit('_send', data)}
   easypeers.off = events.off.bind(events)
 
-  easypeers.maxPeers = easypeers.opts.maxPeers
-  easypeers.coverage = easypeers.opts.coverage || 0.3
+  easypeers.maxPeers = easypeers.opts.maxPeers || 6
   easypeers.debug = easypeers.opts.debug || false
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
   easypeers.identifier = crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
   easypeers.address = crypto.randomBytes(20).toString('hex')
   easypeers.swarmHashes = []
 
-  let wires = {}
+  easypeers.wires = {}
   let seen = {}
 
-  let client = new WebTorrent({dht:false, lsd:false, peerId:easypeers.address})
+  let client = new WebTorrent({dht:true, lsd:false, peerId:easypeers.address})
   
   let opts = {
     infoHash: easypeers.identifier,
     peerId: easypeers.address,
     wrtc: wrtc,
     announce: [
+      easypeers.opts.tracker ? easypeers.opts.tracker : '',
       'wss://tracker.peer.ooo',
       'wss://tracker.openwebtorrent.com'
     ],
@@ -45,135 +46,175 @@ const Easypeers = function(identifier, args){
   
   let torrent = client.add(opts)
 
-  client.on('ready', () => {
-    console.log("ready")
-    setTimeout(()=>{
-      if(Object.keys(seen).length === 0){
-        torrent.destroy()
-        torrent = client.add(opts)
-      }
-    },easypeers.timeout * 1.5)
-  })
   client.on('warning', err => {
-    console.log('Warning', err)
+    console.warning('Warning', err)
   })
   client.on('error', err => {
-    console.log('Error', err)
+    console.error('Error', err)
   })
 
-  torrent.on("wire", function(wire) {
-    easypeers.peerCount = torrent.numPeers
-    if(torrent.numPeers > easypeers.maxPeers && easypeers.coverage === -1){
-      wire.destroy()
-      return
+  // Unused functions to get the peerId of the furthest and closest connected peer
+  // May use them at a later date
+  function getFurthestPeer(peerId) {
+    let diff = Object.keys(easypeers.wires).filter(x => {
+      return x
+    })
+    
+    let furthest
+    if(diff.length > 0 && easypeers.address < diff[0]) {
+      furthest = [diff[0]]
     } else {
-      wire.use(_easypeers(wire, wire.peerId))
+      furthest = diff.filter(v => {
+        return v > easypeers.address
+      })
+    }
+    
+    return furthest
+  }
+  
+  function getClosestPeer(peerId){
+    let diff = Object.keys(easypeers.wires).filter(x => {
+      return x
+    });
+    
+    let closest;
+    if(diff.length > 0 && easypeers.address < diff[0]) {
+      closest = [diff[0]]
+    } else {
+      closest = diff.filter(v => {
+        return v < easypeers.address
+      })
+    }
+    return closest
+  }
+  
+  easypeers.wireCount = 0
+  torrent.on("wire", function(wire) {
+    wire.on('close', ()=>{
+      easypeers.wireCount--
+      if(easypeers.wireCount < 0) easypeers.wireCount = 0
+      delete easypeers.wires[wire.peerId]
+
+      if(torrent && torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
+        torrent.resume()
+        torrent.announce[opts.announce]
+      }
+      easypeers.peerCount = torrent.numPeers
+      if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
+      easypeers.emit('disconnect', wire.peerId)
+    })
+
+    // Avoid duplicate connections to existing peers
+    if(easypeers.wires.hasOwnProperty(wire.peerId)) return
+    
+    // let closestPeerId = getClosestPeer(wire.peerId)
+    // let furthestPeerId = getFurthestPeer(closestPeerId)
+    
+    // Partial mesh
+    const hex2bin = (data) => data.split('').map(i => parseInt(i, 16).toString(2).padStart(4, '0')).join('')
+    let closeness = hex2bin(easypeers.address) - hex2bin(wire.peerId)
+    closeness = Math.abs(closeness)    
+    let closenessString = closeness.toString()
+    let firstDigit = closenessString.charAt(0)
+    closeness = parseInt(firstDigit)
+
+    if(Math.trunc(Math.abs(closeness)) === 1 && easypeers.wireCount <= easypeers.maxPeers){
+      if (easypeers.wireCount < easypeers.maxPeers) {
+        easypeers.wires[wire.peerId] = wire
+        easypeers.wires[wire.peerId].use(_easypeers(easypeers.wires[wire.peerId]))
+        easypeers.wireCount++
+        easypeers.peerCount = torrent.numPeers
+      } else {
+        wire.destroy()
+      }
     }
   })
 
+  function isValidJSON(json) {
+    try {
+        JSON.parse(json);
+        return true;
+    } catch (e) {
+        return false;
+    }
+  }
+
+  easypeers.on('_send', data => {
+    if(typeof data === 'number') data = data.toString()
+    data = data.toString()//.trim()
+  
+    let message = {}
+  
+    if(!isNaN(data)) {
+      message = {
+        id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
+        from: easypeers.address,
+        has: Object.keys(easypeers.wires),
+        message: data,
+      }
+    } else if(isValidJSON(data)) {
+      try {
+        message = JSON.parse(data)
+        message.has = Object.keys(easypeers.wires)
+        message.id = crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random()
+      }
+      catch (err) {
+        console.error(err)
+      }
+    } else {
+      message = {
+        id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
+        from: easypeers.address,
+        has: Object.keys(easypeers.wires),
+        message: data,
+      }
+    }
+
+    for(let wire in easypeers.wires){
+      easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
+    }
+  })
+  
   setInterval(()=>{
     torrent.announce[opts.announce]
   }, easypeers.timeout)
 
-  let _easypeers = () =>{
+  let last
+  let _easypeers = () => {
     let swEasypeers = function(wire) {
-      wire._writableState.emitClose = false
-      wire[wire.peerId] = wire
-      wire[wire.peerId].extendedHandshake.keys = 'SEA Pairs' // establish SEA pairs here
+      easypeers.wires[wire.peerId].extendedHandshake.keys = 'SEA Pairs'; // establish SEA pairs here
+    
       this.onHandshake = (infoHash, peerId, extensions) => {
-        wires[wire.peerId] = wire.peerId
-        // partial mesh
-        
-        if(torrent.numPeers > easypeers.maxPeers){
-          let spares = Object.keys(wires)
-          let spare = spares.filter(v => {
-            return v < easypeers.address
-          })
-          if(Math.round(spare.length * easypeers.coverage) === 1 && torrent.numPeers <= easypeers.maxPeers + Math.round(spare.length * 0.3)+1) {
-            wire[wire.peerId]._writableState.emitClose = true
-          }
-          else {
-            delete wire[wire.peerId]
-            delete wires[wire.peerId]
-            wire.destroy()
-          }
-        }
         seen[wire.peerId] = {when: new Date().getTime()}
       }
-      wire.on('close', ()=>{
-        if(torrent.numPeers === 0){
-          torrent.announce[opts.announce]
-        }
-        if(torrent & torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
-          torrent.announce[opts.announce]
-        }
-        easypeers.peerCount = torrent.numPeers
-        if(wire._writableState.emitClose && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
-        easypeers.emit('disconnect', wire.peerId)
-        delete wire[wire.peerId]
-        delete wires[wire.peerId]
-      })
+
       this.onExtendedHandshake = (handshake) => {
-        if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (2 * 60 * 1000))
+        if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (5 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
-        // Send messages
-        if (handshake.m && handshake.m.sw_easypeers) {
-          if(typeof window === 'undefined'){
-            process.stdout.on('data', data => {
-              try{
-                data = data.split(':')
-                if(data[1] !== easypeers.address) return
-                else
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-              catch{
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-            })
-          } else {
-            easypeers.send = (data) =>{
-              console.log('does this work?', data)
-              wire[wire.peerId].extended('sw_easypeers', data)
-              try{
-                data = data.split(':')
-                if(data[1] !== easypeers.address) return
-                else
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-              catch{
-                wire[wire.peerId].extended('sw_easypeers', data)
-              }
-            }
-          }
-        }
       }
+
       this.onMessage = function(message) {
-        message = message.toString().trim()
-        try{
-          message = message.split(':')
-          if(message[0]==='address') console.log(easypeers.address) 
-          else
-          if(message[0]==='peers') console.log(torrent.numPeers)
-          else
-          if(message[0]==='seen') console.log(seen)
-          else
-          if(message[0]==='direct' &&  Object.keys(seen).includes(message[1])){
-            console.log('have peer, sending..... ', message[2])
-          } else
-          if(message.length === 1){
-            easypeers.emit('message', message)
-          } else 
-          if (message[1] === easypeers.address){
-            easypeers.emit('message', message)
-          } else {
-            easypeers.emit('message', message)
-          }
-          //console.log('don\'t have peer, not sending')
-          
+        message = message.toString()
+        if(message.includes(last)) return
+        try {
+          message = message.substring(message.indexOf(':') + 1)
+          message = JSON.parse(message)
+          message.has = []
+          peers = Object.keys(easypeers.wires)
+          peers.forEach(peer => {
+            if(!message.has.includes(peer)){
+              message.has.push(peer)
+              easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message));
+            }
+          })
+        } catch (err){
+          easypeers.emit('message', message.toString());
         }
-        catch(err){console.log(err)}        
+        if(message.from !== easypeers.address) easypeers.emit('message', message)
+        last = message.id
       }
     }
+
     swEasypeers.prototype.name = 'sw_easypeers'
     return swEasypeers
   }
@@ -181,7 +222,7 @@ const Easypeers = function(identifier, args){
 
 module.exports = Easypeers
 }).call(this)}).call(this,require('_process'))
-},{"_process":285,"crypto":204,"events":233,"webtorrent-hybrid":121,"wrtc":132}],2:[function(require,module,exports){
+},{"_process":285,"crypto":204,"events":233,"webtorrent-hybrid":120,"wrtc":132}],2:[function(require,module,exports){
 const ADDR_RE = /^\[?([^\]]+)]?:(\d+)$/ // ipv4/ipv6/hostname + port
 
 let cache = new Map()
@@ -2133,7 +2174,7 @@ class Wire extends stream.Duplex {
 module.exports = Wire
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"bencode":6,"bitfield":10,"buffer":195,"crypto":204,"debug":26,"randombytes":68,"rc4":71,"readable-stream":86,"simple-sha1":96,"speedometer":103,"unordered-array-remove":116}],12:[function(require,module,exports){
+},{"bencode":6,"bitfield":10,"buffer":195,"crypto":204,"debug":26,"randombytes":68,"rc4":71,"readable-stream":86,"simple-sha1":96,"speedometer":103,"unordered-array-remove":115}],12:[function(require,module,exports){
 (function (process,Buffer){(function (){
 const debug = require('debug')('bittorrent-tracker:client')
 const EventEmitter = require('events')
@@ -4591,7 +4632,7 @@ function setup(env) {
 			namespaces = split[i].replace(/\*/g, '.*?');
 
 			if (namespaces[0] === '-') {
-				createDebug.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
+				createDebug.skips.push(new RegExp('^' + namespaces.slice(1) + '$'));
 			} else {
 				createDebug.names.push(new RegExp('^' + namespaces + '$'));
 			}
@@ -5013,7 +5054,7 @@ class FileReadStream extends Readable {
 
 module.exports = FileReadStream
 
-},{"readable-stream":86,"typedarray-to-buffer":114}],33:[function(require,module,exports){
+},{"readable-stream":86,"typedarray-to-buffer":113}],33:[function(require,module,exports){
 // originally pulled out of simple-peer
 
 module.exports = function getBrowserRTC () {
@@ -5763,7 +5804,7 @@ module.exports = () => {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":195,"debug":26,"events":233,"unordered-array-remove":116}],45:[function(require,module,exports){
+},{"buffer":195,"debug":26,"events":233,"unordered-array-remove":115}],45:[function(require,module,exports){
 (function (Buffer){(function (){
 /*! magnet-uri. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
 module.exports = magnetURIDecode
@@ -7424,7 +7465,7 @@ function readString (buf, offset, length) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./descriptor":53,"./index":54,"buffer":195,"uint64be":115}],53:[function(require,module,exports){
+},{"./descriptor":53,"./index":54,"buffer":195,"uint64be":114}],53:[function(require,module,exports){
 (function (Buffer){(function (){
 var tagToName = {
   0x03: 'ESDescriptor',
@@ -7729,7 +7770,7 @@ Box.encodingLength = function (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./boxes":52,"buffer":195,"uint64be":115}],55:[function(require,module,exports){
+},{"./boxes":52,"buffer":195,"uint64be":114}],55:[function(require,module,exports){
 (function (Buffer){(function (){
 var stream = require('readable-stream')
 var nextEvent = require('next-event')
@@ -11742,7 +11783,7 @@ Writable.prototype._destroy = function (err, cb) {
   cb(err);
 };
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../errors":72,"./_stream_duplex":73,"./internal/streams/destroy":80,"./internal/streams/state":84,"./internal/streams/stream":85,"_process":285,"buffer":195,"inherits":35,"util-deprecate":118}],78:[function(require,module,exports){
+},{"../errors":72,"./_stream_duplex":73,"./internal/streams/destroy":80,"./internal/streams/state":84,"./internal/streams/stream":85,"_process":285,"buffer":195,"inherits":35,"util-deprecate":117}],78:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -12922,7 +12963,7 @@ function setMediaOpts (elem, opts) {
   elem.controls = !!opts.controls
 }
 
-},{"./lib/mime.json":88,"debug":26,"is-ascii":36,"mediasource":46,"path":278,"stream-to-blob-url":104,"videostream":120}],88:[function(require,module,exports){
+},{"./lib/mime.json":88,"debug":26,"is-ascii":36,"mediasource":46,"path":278,"stream-to-blob-url":104,"videostream":119}],88:[function(require,module,exports){
 module.exports={
   ".3gp": "video/3gpp",
   ".aac": "audio/aac",
@@ -16063,84 +16104,90 @@ const FIFO = require('fast-fifo')
 
 /* eslint-disable no-multi-spaces */
 
-const MAX = ((1 << 25) - 1)
+// 27 bits used total (4 from shared, 13 from read, and 10 from write)
+const MAX = ((1 << 27) - 1)
 
 // Shared state
-const OPENING     = 0b001
-const DESTROYING  = 0b010
-const DESTROYED   = 0b100
+const OPENING       = 0b0001
+const PREDESTROYING = 0b0010
+const DESTROYING    = 0b0100
+const DESTROYED     = 0b1000
 
 const NOT_OPENING = MAX ^ OPENING
+const NOT_PREDESTROYING = MAX ^ PREDESTROYING
 
-// Read state
-const READ_ACTIVE           = 0b0000000000001 << 3
-const READ_PRIMARY          = 0b0000000000010 << 3
-const READ_SYNC             = 0b0000000000100 << 3
-const READ_QUEUED           = 0b0000000001000 << 3
-const READ_RESUMED          = 0b0000000010000 << 3
-const READ_PIPE_DRAINED     = 0b0000000100000 << 3
-const READ_ENDING           = 0b0000001000000 << 3
-const READ_EMIT_DATA        = 0b0000010000000 << 3
-const READ_EMIT_READABLE    = 0b0000100000000 << 3
-const READ_EMITTED_READABLE = 0b0001000000000 << 3
-const READ_DONE             = 0b0010000000000 << 3
-const READ_NEXT_TICK        = 0b0100000000001 << 3 // also active
-const READ_NEEDS_PUSH       = 0b1000000000000 << 3
+// Read state (4 bit offset from shared state)
+const READ_ACTIVE           = 0b0000000000001 << 4
+const READ_UPDATING         = 0b0000000000010 << 4
+const READ_PRIMARY          = 0b0000000000100 << 4
+const READ_QUEUED           = 0b0000000001000 << 4
+const READ_RESUMED          = 0b0000000010000 << 4
+const READ_PIPE_DRAINED     = 0b0000000100000 << 4
+const READ_ENDING           = 0b0000001000000 << 4
+const READ_EMIT_DATA        = 0b0000010000000 << 4
+const READ_EMIT_READABLE    = 0b0000100000000 << 4
+const READ_EMITTED_READABLE = 0b0001000000000 << 4
+const READ_DONE             = 0b0010000000000 << 4
+const READ_NEXT_TICK        = 0b0100000000000 << 4
+const READ_NEEDS_PUSH       = 0b1000000000000 << 4
+
+// Combined read state
+const READ_FLOWING = READ_RESUMED | READ_PIPE_DRAINED
+const READ_ACTIVE_AND_NEEDS_PUSH = READ_ACTIVE | READ_NEEDS_PUSH
+const READ_PRIMARY_AND_ACTIVE = READ_PRIMARY | READ_ACTIVE
+const READ_EMIT_READABLE_AND_QUEUED = READ_EMIT_READABLE | READ_QUEUED
 
 const READ_NOT_ACTIVE             = MAX ^ READ_ACTIVE
 const READ_NON_PRIMARY            = MAX ^ READ_PRIMARY
 const READ_NON_PRIMARY_AND_PUSHED = MAX ^ (READ_PRIMARY | READ_NEEDS_PUSH)
-const READ_NOT_SYNC               = MAX ^ READ_SYNC
 const READ_PUSHED                 = MAX ^ READ_NEEDS_PUSH
 const READ_PAUSED                 = MAX ^ READ_RESUMED
 const READ_NOT_QUEUED             = MAX ^ (READ_QUEUED | READ_EMITTED_READABLE)
 const READ_NOT_ENDING             = MAX ^ READ_ENDING
-const READ_PIPE_NOT_DRAINED       = MAX ^ (READ_RESUMED | READ_PIPE_DRAINED)
+const READ_PIPE_NOT_DRAINED       = MAX ^ READ_FLOWING
 const READ_NOT_NEXT_TICK          = MAX ^ READ_NEXT_TICK
+const READ_NOT_UPDATING           = MAX ^ READ_UPDATING
 
-// Write state
-const WRITE_ACTIVE     = 0b000000001 << 16
-const WRITE_PRIMARY    = 0b000000010 << 16
-const WRITE_SYNC       = 0b000000100 << 16
-const WRITE_QUEUED     = 0b000001000 << 16
-const WRITE_UNDRAINED  = 0b000010000 << 16
-const WRITE_DONE       = 0b000100000 << 16
-const WRITE_EMIT_DRAIN = 0b001000000 << 16
-const WRITE_NEXT_TICK  = 0b010000001 << 16 // also active
-const WRITE_FINISHING  = 0b100000000 << 16
+// Write state (17 bit offset, 4 bit offset from shared state and 13 from read state)
+const WRITE_ACTIVE     = 0b0000000001 << 17
+const WRITE_UPDATING   = 0b0000000010 << 17
+const WRITE_PRIMARY    = 0b0000000100 << 17
+const WRITE_QUEUED     = 0b0000001000 << 17
+const WRITE_UNDRAINED  = 0b0000010000 << 17
+const WRITE_DONE       = 0b0000100000 << 17
+const WRITE_EMIT_DRAIN = 0b0001000000 << 17
+const WRITE_NEXT_TICK  = 0b0010000000 << 17
+const WRITE_WRITING    = 0b0100000000 << 17
+const WRITE_FINISHING  = 0b1000000000 << 17
 
-const WRITE_NOT_ACTIVE    = MAX ^ WRITE_ACTIVE
-const WRITE_NOT_SYNC      = MAX ^ WRITE_SYNC
+const WRITE_NOT_ACTIVE    = MAX ^ (WRITE_ACTIVE | WRITE_WRITING)
 const WRITE_NON_PRIMARY   = MAX ^ WRITE_PRIMARY
 const WRITE_NOT_FINISHING = MAX ^ WRITE_FINISHING
 const WRITE_DRAINED       = MAX ^ WRITE_UNDRAINED
 const WRITE_NOT_QUEUED    = MAX ^ WRITE_QUEUED
 const WRITE_NOT_NEXT_TICK = MAX ^ WRITE_NEXT_TICK
+const WRITE_NOT_UPDATING  = MAX ^ WRITE_UPDATING
 
 // Combined shared state
 const ACTIVE = READ_ACTIVE | WRITE_ACTIVE
 const NOT_ACTIVE = MAX ^ ACTIVE
 const DONE = READ_DONE | WRITE_DONE
-const DESTROY_STATUS = DESTROYING | DESTROYED
+const DESTROY_STATUS = DESTROYING | DESTROYED | PREDESTROYING
 const OPEN_STATUS = DESTROY_STATUS | OPENING
 const AUTO_DESTROY = DESTROY_STATUS | DONE
 const NON_PRIMARY = WRITE_NON_PRIMARY & READ_NON_PRIMARY
-const TICKING = (WRITE_NEXT_TICK | READ_NEXT_TICK) & NOT_ACTIVE
-const ACTIVE_OR_TICKING = ACTIVE | TICKING
+const ACTIVE_OR_TICKING = WRITE_NEXT_TICK | READ_NEXT_TICK
+const TICKING = ACTIVE_OR_TICKING & NOT_ACTIVE
 const IS_OPENING = OPEN_STATUS | TICKING
 
-// Combined read state
+// Combined shared state and read state
 const READ_PRIMARY_STATUS = OPEN_STATUS | READ_ENDING | READ_DONE
 const READ_STATUS = OPEN_STATUS | READ_DONE | READ_QUEUED
-const READ_FLOWING = READ_RESUMED | READ_PIPE_DRAINED
-const READ_ACTIVE_AND_SYNC = READ_ACTIVE | READ_SYNC
-const READ_ACTIVE_AND_SYNC_AND_NEEDS_PUSH = READ_ACTIVE | READ_SYNC | READ_NEEDS_PUSH
-const READ_PRIMARY_AND_ACTIVE = READ_PRIMARY | READ_ACTIVE
 const READ_ENDING_STATUS = OPEN_STATUS | READ_ENDING | READ_QUEUED
-const READ_EMIT_READABLE_AND_QUEUED = READ_EMIT_READABLE | READ_QUEUED
 const READ_READABLE_STATUS = OPEN_STATUS | READ_EMIT_READABLE | READ_QUEUED | READ_EMITTED_READABLE
 const SHOULD_NOT_READ = OPEN_STATUS | READ_ACTIVE | READ_ENDING | READ_DONE | READ_NEEDS_PUSH
 const READ_BACKPRESSURE_STATUS = DESTROY_STATUS | READ_ENDING | READ_DONE
+const READ_UPDATE_SYNC_STATUS = READ_UPDATING | OPEN_STATUS | READ_NEXT_TICK | READ_PRIMARY
 
 // Combined write state
 const WRITE_PRIMARY_STATUS = OPEN_STATUS | WRITE_FINISHING | WRITE_DONE
@@ -16149,9 +16196,10 @@ const WRITE_QUEUED_AND_ACTIVE = WRITE_QUEUED | WRITE_ACTIVE
 const WRITE_DRAIN_STATUS = WRITE_QUEUED | WRITE_UNDRAINED | OPEN_STATUS | WRITE_ACTIVE
 const WRITE_STATUS = OPEN_STATUS | WRITE_ACTIVE | WRITE_QUEUED
 const WRITE_PRIMARY_AND_ACTIVE = WRITE_PRIMARY | WRITE_ACTIVE
-const WRITE_ACTIVE_AND_SYNC = WRITE_ACTIVE | WRITE_SYNC
+const WRITE_ACTIVE_AND_WRITING = WRITE_ACTIVE | WRITE_WRITING
 const WRITE_FINISHING_STATUS = OPEN_STATUS | WRITE_FINISHING | WRITE_QUEUED_AND_ACTIVE | WRITE_DONE
 const WRITE_BACKPRESSURE_STATUS = WRITE_UNDRAINED | DESTROY_STATUS | WRITE_FINISHING | WRITE_DONE
+const WRITE_UPDATE_SYNC_STATUS = WRITE_UPDATING | OPEN_STATUS | WRITE_NEXT_TICK | WRITE_PRIMARY
 
 const asyncIterator = Symbol.asyncIterator || Symbol('asyncIterator')
 
@@ -16163,6 +16211,7 @@ class WritableState {
     this.buffered = 0
     this.error = null
     this.pipeline = null
+    this.drains = null // if we add more seldomly used helpers we might them into a subobject so its a single ptr
     this.byteLength = byteLengthWritable || byteLength || defaultByteLength
     this.map = mapWritable || map
     this.afterWrite = afterWrite.bind(this)
@@ -16190,10 +16239,9 @@ class WritableState {
 
   shift () {
     const data = this.queue.shift()
-    const stream = this.stream
 
     this.buffered -= this.byteLength(data)
-    if (this.buffered === 0) stream._duplexState &= WRITE_NOT_QUEUED
+    if (this.buffered === 0) this.stream._duplexState &= WRITE_NOT_QUEUED
 
     return data
   }
@@ -16220,14 +16268,19 @@ class WritableState {
   update () {
     const stream = this.stream
 
-    while ((stream._duplexState & WRITE_STATUS) === WRITE_QUEUED) {
-      const data = this.shift()
-      stream._duplexState |= WRITE_ACTIVE_AND_SYNC
-      stream._write(data, this.afterWrite)
-      stream._duplexState &= WRITE_NOT_SYNC
-    }
+    stream._duplexState |= WRITE_UPDATING
 
-    if ((stream._duplexState & WRITE_PRIMARY_AND_ACTIVE) === 0) this.updateNonPrimary()
+    do {
+      while ((stream._duplexState & WRITE_STATUS) === WRITE_QUEUED) {
+        const data = this.shift()
+        stream._duplexState |= WRITE_ACTIVE_AND_WRITING
+        stream._write(data, this.afterWrite)
+      }
+
+      if ((stream._duplexState & WRITE_PRIMARY_AND_ACTIVE) === 0) this.updateNonPrimary()
+    } while (this.continueUpdate() === true)
+
+    stream._duplexState &= WRITE_NOT_UPDATING
   }
 
   updateNonPrimary () {
@@ -16253,10 +16306,21 @@ class WritableState {
     }
   }
 
+  continueUpdate () {
+    if ((this.stream._duplexState & WRITE_NEXT_TICK) === 0) return false
+    this.stream._duplexState &= WRITE_NOT_NEXT_TICK
+    return true
+  }
+
+  updateCallback () {
+    if ((this.stream._duplexState & WRITE_UPDATE_SYNC_STATUS) === WRITE_PRIMARY) this.update()
+    else this.updateNextTick()
+  }
+
   updateNextTick () {
     if ((this.stream._duplexState & WRITE_NEXT_TICK) !== 0) return
     this.stream._duplexState |= WRITE_NEXT_TICK
-    queueTick(this.afterUpdateNextTick)
+    if ((this.stream._duplexState & WRITE_UPDATING) === 0) queueTick(this.afterUpdateNextTick)
   }
 }
 
@@ -16281,10 +16345,11 @@ class ReadableState {
 
   pipe (pipeTo, cb) {
     if (this.pipeTo !== null) throw new Error('Can only pipe to one destination')
+    if (typeof cb !== 'function') cb = null
 
     this.stream._duplexState |= READ_PIPE_DRAINED
     this.pipeTo = pipeTo
-    this.pipeline = new Pipeline(this.stream, pipeTo, cb || null)
+    this.pipeline = new Pipeline(this.stream, pipeTo, cb)
 
     if (cb) this.stream.on('error', noop) // We already error handle this so supress crashes
 
@@ -16332,18 +16397,16 @@ class ReadableState {
   }
 
   unshift (data) {
-    let tail
-    const pending = []
+    const pending = [this.map !== null ? this.map(data) : data]
+    while (this.buffered > 0) pending.push(this.shift())
 
-    while ((tail = this.queue.shift()) !== undefined) {
-      pending.push(tail)
+    for (let i = 0; i < pending.length - 1; i++) {
+      const data = pending[i]
+      this.buffered += this.byteLength(data)
+      this.queue.push(data)
     }
 
-    this.push(data)
-
-    for (let i = 0; i < pending.length; i++) {
-      this.queue.push(pending[i])
-    }
+    this.push(pending[pending.length - 1])
   }
 
   read () {
@@ -16372,21 +16435,26 @@ class ReadableState {
   update () {
     const stream = this.stream
 
-    this.drain()
+    stream._duplexState |= READ_UPDATING
 
-    while (this.buffered < this.highWaterMark && (stream._duplexState & SHOULD_NOT_READ) === 0) {
-      stream._duplexState |= READ_ACTIVE_AND_SYNC_AND_NEEDS_PUSH
-      stream._read(this.afterRead)
-      stream._duplexState &= READ_NOT_SYNC
-      if ((stream._duplexState & READ_ACTIVE) === 0) this.drain()
-    }
+    do {
+      this.drain()
 
-    if ((stream._duplexState & READ_READABLE_STATUS) === READ_EMIT_READABLE_AND_QUEUED) {
-      stream._duplexState |= READ_EMITTED_READABLE
-      stream.emit('readable')
-    }
+      while (this.buffered < this.highWaterMark && (stream._duplexState & SHOULD_NOT_READ) === 0) {
+        stream._duplexState |= READ_ACTIVE_AND_NEEDS_PUSH
+        stream._read(this.afterRead)
+        this.drain()
+      }
 
-    if ((stream._duplexState & READ_PRIMARY_AND_ACTIVE) === 0) this.updateNonPrimary()
+      if ((stream._duplexState & READ_READABLE_STATUS) === READ_EMIT_READABLE_AND_QUEUED) {
+        stream._duplexState |= READ_EMITTED_READABLE
+        stream.emit('readable')
+      }
+
+      if ((stream._duplexState & READ_PRIMARY_AND_ACTIVE) === 0) this.updateNonPrimary()
+    } while (this.continueUpdate() === true)
+
+    stream._duplexState &= READ_NOT_UPDATING
   }
 
   updateNonPrimary () {
@@ -16413,10 +16481,21 @@ class ReadableState {
     }
   }
 
+  continueUpdate () {
+    if ((this.stream._duplexState & READ_NEXT_TICK) === 0) return false
+    this.stream._duplexState &= READ_NOT_NEXT_TICK
+    return true
+  }
+
+  updateCallback () {
+    if ((this.stream._readableState & READ_UPDATE_SYNC_STATUS) === READ_PRIMARY) this.update()
+    else this.updateNextTick()
+  }
+
   updateNextTick () {
     if ((this.stream._duplexState & READ_NEXT_TICK) !== 0) return
     this.stream._duplexState |= READ_NEXT_TICK
-    queueTick(this.afterUpdateNextTick)
+    if ((this.stream._duplexState & READ_UPDATING) === 0) queueTick(this.afterUpdateNextTick)
   }
 }
 
@@ -16473,7 +16552,7 @@ class Pipeline {
 
 function afterDrain () {
   this.stream._duplexState |= READ_PIPE_DRAINED
-  if ((this.stream._duplexState & READ_ACTIVE_AND_SYNC) === 0) this.updateNextTick()
+  this.updateCallback()
 }
 
 function afterFinal (err) {
@@ -16488,7 +16567,10 @@ function afterFinal (err) {
   }
 
   stream._duplexState &= WRITE_NOT_ACTIVE
-  this.update()
+
+  // no need to wait the extra tick here, so we short circuit that
+  if ((stream._duplexState & WRITE_UPDATING) === 0) this.update()
+  else this.updateNextTick()
 }
 
 function afterDestroy (err) {
@@ -16503,7 +16585,11 @@ function afterDestroy (err) {
   const ws = stream._writableState
 
   if (rs !== null && rs.pipeline !== null) rs.pipeline.done(stream, err)
-  if (ws !== null && ws.pipeline !== null) ws.pipeline.done(stream, err)
+
+  if (ws !== null) {
+    while (ws.drains !== null && ws.drains.length > 0) ws.drains.shift().resolve(false)
+    if (ws.pipeline !== null) ws.pipeline.done(stream, err)
+  }
 }
 
 function afterWrite (err) {
@@ -16512,6 +16598,8 @@ function afterWrite (err) {
   if (err) stream.destroy(err)
   stream._duplexState &= WRITE_NOT_ACTIVE
 
+  if (this.drains !== null) tickDrains(this.drains)
+
   if ((stream._duplexState & WRITE_DRAIN_STATUS) === WRITE_UNDRAINED) {
     stream._duplexState &= WRITE_DRAINED
     if ((stream._duplexState & WRITE_EMIT_DRAIN) === WRITE_EMIT_DRAIN) {
@@ -16519,23 +16607,37 @@ function afterWrite (err) {
     }
   }
 
-  if ((stream._duplexState & WRITE_SYNC) === 0) this.update()
+  this.updateCallback()
 }
 
 function afterRead (err) {
   if (err) this.stream.destroy(err)
   this.stream._duplexState &= READ_NOT_ACTIVE
-  if ((this.stream._duplexState & READ_SYNC) === 0) this.update()
+  this.updateCallback()
 }
 
 function updateReadNT () {
-  this.stream._duplexState &= READ_NOT_NEXT_TICK
-  this.update()
+  if ((this.stream._duplexState & READ_UPDATING) === 0) {
+    this.stream._duplexState &= READ_NOT_NEXT_TICK
+    this.update()
+  }
 }
 
 function updateWriteNT () {
-  this.stream._duplexState &= WRITE_NOT_NEXT_TICK
-  this.update()
+  if ((this.stream._duplexState & WRITE_UPDATING) === 0) {
+    this.stream._duplexState &= WRITE_NOT_NEXT_TICK
+    this.update()
+  }
+}
+
+function tickDrains (drains) {
+  for (let i = 0; i < drains.length; i++) {
+    // drains.writes are monotonic, so if one is 0 its always the first one
+    if (--drains[i].writes === 0) {
+      drains.shift().resolve(true)
+      i--
+    }
+  }
 }
 
 function afterOpen (err) {
@@ -16552,11 +16654,11 @@ function afterOpen (err) {
   stream._duplexState &= NOT_ACTIVE
 
   if (stream._writableState !== null) {
-    stream._writableState.update()
+    stream._writableState.updateCallback()
   }
 
   if (stream._readableState !== null) {
-    stream._readableState.update()
+    stream._readableState.updateCallback()
   }
 }
 
@@ -16615,15 +16717,22 @@ class Stream extends EventEmitter {
     if ((this._duplexState & DESTROY_STATUS) === 0) {
       if (!err) err = STREAM_DESTROYED
       this._duplexState = (this._duplexState | DESTROYING) & NON_PRIMARY
+
       if (this._readableState !== null) {
+        this._readableState.highWaterMark = 0
         this._readableState.error = err
-        this._readableState.updateNextTick()
       }
       if (this._writableState !== null) {
+        this._writableState.highWaterMark = 0
         this._writableState.error = err
-        this._writableState.updateNextTick()
       }
+
+      this._duplexState |= PREDESTROYING
       this._predestroy()
+      this._duplexState &= NOT_PREDESTROYING
+
+      if (this._readableState !== null) this._readableState.updateNextTick()
+      if (this._writableState !== null) this._writableState.updateNextTick()
     }
   }
 
@@ -16659,7 +16768,7 @@ class Readable extends Stream {
 
     if (opts) {
       if (opts.read) this._read = opts.read
-      if (opts.eagerOpen) this.resume().pause()
+      if (opts.eagerOpen) this._readableState.updateNextTick()
     }
   }
 
@@ -16668,8 +16777,8 @@ class Readable extends Stream {
   }
 
   pipe (dest, cb) {
-    this._readableState.pipe(dest, cb)
     this._readableState.updateNextTick()
+    this._readableState.pipe(dest, cb)
     return dest
   }
 
@@ -16711,6 +16820,7 @@ class Readable extends Stream {
         destroy = ite.return()
       },
       destroy (cb) {
+        if (!destroy) return cb(null)
         destroy.then(cb.bind(null, null)).catch(cb)
       }
     })
@@ -16818,6 +16928,7 @@ class Writable extends Stream {
       if (opts.writev) this._writev = opts.writev
       if (opts.write) this._write = opts.write
       if (opts.final) this._final = opts.final
+      if (opts.eagerOpen) this._writableState.updateNextTick()
     }
   }
 
@@ -16835,6 +16946,17 @@ class Writable extends Stream {
 
   static isBackpressured (ws) {
     return (ws._duplexState & WRITE_BACKPRESSURE_STATUS) !== 0
+  }
+
+  static drained (ws) {
+    if (ws.destroyed) return Promise.resolve(false)
+    const state = ws._writableState
+    const writes = state.queue.length + ((ws._duplexState & WRITE_WRITING) ? 1 : 0)
+    if (writes === 0) return Promise.resolve(true)
+    if (state.drains === null) state.drains = []
+    return new Promise((resolve) => {
+      state.drains.push({ writes, resolve })
+    })
   }
 
   write (data) {
@@ -16976,9 +17098,20 @@ function pipeline (stream, ...streams) {
   if (done) {
     let fin = false
 
-    dest.on('finish', () => { fin = true })
-    dest.on('error', err => { error = error || err })
-    dest.on('close', () => done(error || (fin ? null : PREMATURE_CLOSE)))
+    const autoDestroy = isStreamx(dest) || !!(dest._writableState && dest._writableState.autoDestroy)
+
+    dest.on('error', (err) => {
+      if (error === null) error = err
+    })
+
+    dest.on('finish', () => {
+      fin = true
+      if (!autoDestroy) done(error)
+    })
+
+    if (autoDestroy) {
+      dest.on('close', () => done(error || (fin ? null : PREMATURE_CLOSE)))
+    }
   }
 
   return dest
@@ -17011,6 +17144,11 @@ function isStreamx (stream) {
   return typeof stream._duplexState === 'number' && isStream(stream)
 }
 
+function getStreamError (stream) {
+  const err = (stream._readableState && stream._readableState.error) || (stream._writableState && stream._writableState.error)
+  return err === STREAM_DESTROYED ? null : err // only explicit errors
+}
+
 function isReadStreamx (stream) {
   return isStreamx(stream) && stream.readable
 }
@@ -17034,6 +17172,7 @@ module.exports = {
   pipelinePromise,
   isStream,
   isStreamx,
+  getStreamError,
   Stream,
   Writable,
   Readable,
@@ -17530,232 +17669,6 @@ module.exports = function (buf) {
 }
 
 },{"buffer":195}],112:[function(require,module,exports){
-(function (process){(function (){
-/*! torrent-discovery. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
-const debug = require('debug')('torrent-discovery')
-const DHT = require('bittorrent-dht/client') // empty object in browser
-const EventEmitter = require('events').EventEmitter
-const parallel = require('run-parallel')
-const Tracker = require('bittorrent-tracker/client')
-const LSD = require('bittorrent-lsd')
-
-class Discovery extends EventEmitter {
-  constructor (opts) {
-    super()
-
-    if (!opts.peerId) throw new Error('Option `peerId` is required')
-    if (!opts.infoHash) throw new Error('Option `infoHash` is required')
-    if (!process.browser && !opts.port) throw new Error('Option `port` is required')
-
-    this.peerId = typeof opts.peerId === 'string'
-      ? opts.peerId
-      : opts.peerId.toString('hex')
-    this.infoHash = typeof opts.infoHash === 'string'
-      ? opts.infoHash.toLowerCase()
-      : opts.infoHash.toString('hex')
-    this._port = opts.port // torrent port
-    this._userAgent = opts.userAgent // User-Agent header for http requests
-
-    this.destroyed = false
-
-    this._announce = opts.announce || []
-    this._intervalMs = opts.intervalMs || (15 * 60 * 1000)
-    this._trackerOpts = null
-    this._dhtAnnouncing = false
-    this._dhtTimeout = false
-    this._internalDHT = false // is the DHT created internally?
-
-    this._onWarning = err => {
-      this.emit('warning', err)
-    }
-    this._onError = err => {
-      this.emit('error', err)
-    }
-    this._onDHTPeer = (peer, infoHash) => {
-      if (infoHash.toString('hex') !== this.infoHash) return
-      this.emit('peer', `${peer.host}:${peer.port}`, 'dht')
-    }
-    this._onTrackerPeer = peer => {
-      this.emit('peer', peer, 'tracker')
-    }
-    this._onTrackerAnnounce = () => {
-      this.emit('trackerAnnounce')
-    }
-    this._onLSDPeer = (peer, infoHash) => {
-      this.emit('peer', peer, 'lsd')
-    }
-
-    const createDHT = (port, opts) => {
-      const dht = new DHT(opts)
-      dht.on('warning', this._onWarning)
-      dht.on('error', this._onError)
-      dht.listen(port)
-      this._internalDHT = true
-      return dht
-    }
-
-    if (opts.tracker === false) {
-      this.tracker = null
-    } else if (opts.tracker && typeof opts.tracker === 'object') {
-      this._trackerOpts = Object.assign({}, opts.tracker)
-      this.tracker = this._createTracker()
-    } else {
-      this.tracker = this._createTracker()
-    }
-
-    if (opts.dht === false || typeof DHT !== 'function') {
-      this.dht = null
-    } else if (opts.dht && typeof opts.dht.addNode === 'function') {
-      this.dht = opts.dht
-    } else if (opts.dht && typeof opts.dht === 'object') {
-      this.dht = createDHT(opts.dhtPort, opts.dht)
-    } else {
-      this.dht = createDHT(opts.dhtPort)
-    }
-
-    if (this.dht) {
-      this.dht.on('peer', this._onDHTPeer)
-      this._dhtAnnounce()
-    }
-
-    if (opts.lsd === false || typeof LSD !== 'function') {
-      this.lsd = null
-    } else {
-      this.lsd = this._createLSD()
-    }
-  }
-
-  updatePort (port) {
-    if (port === this._port) return
-    this._port = port
-
-    if (this.dht) this._dhtAnnounce()
-
-    if (this.tracker) {
-      this.tracker.stop()
-      this.tracker.destroy(() => {
-        this.tracker = this._createTracker()
-      })
-    }
-  }
-
-  complete (opts) {
-    if (this.tracker) {
-      this.tracker.complete(opts)
-    }
-  }
-
-  destroy (cb) {
-    if (this.destroyed) return
-    this.destroyed = true
-
-    clearTimeout(this._dhtTimeout)
-
-    const tasks = []
-
-    if (this.tracker) {
-      this.tracker.stop()
-      this.tracker.removeListener('warning', this._onWarning)
-      this.tracker.removeListener('error', this._onError)
-      this.tracker.removeListener('peer', this._onTrackerPeer)
-      this.tracker.removeListener('update', this._onTrackerAnnounce)
-      tasks.push(cb => {
-        this.tracker.destroy(cb)
-      })
-    }
-
-    if (this.dht) {
-      this.dht.removeListener('peer', this._onDHTPeer)
-    }
-
-    if (this._internalDHT) {
-      this.dht.removeListener('warning', this._onWarning)
-      this.dht.removeListener('error', this._onError)
-      tasks.push(cb => {
-        this.dht.destroy(cb)
-      })
-    }
-
-    if (this.lsd) {
-      this.lsd.removeListener('warning', this._onWarning)
-      this.lsd.removeListener('error', this._onError)
-      this.lsd.removeListener('peer', this._onLSDPeer)
-      tasks.push(cb => {
-        this.lsd.destroy(cb)
-      })
-    }
-
-    parallel(tasks, cb)
-
-    // cleanup
-    this.dht = null
-    this.tracker = null
-    this.lsd = null
-    this._announce = null
-  }
-
-  _createTracker () {
-    const opts = Object.assign({}, this._trackerOpts, {
-      infoHash: this.infoHash,
-      announce: this._announce,
-      peerId: this.peerId,
-      port: this._port,
-      userAgent: this._userAgent
-    })
-
-    const tracker = new Tracker(opts)
-    tracker.on('warning', this._onWarning)
-    tracker.on('error', this._onError)
-    tracker.on('peer', this._onTrackerPeer)
-    tracker.on('update', this._onTrackerAnnounce)
-    tracker.setInterval(this._intervalMs)
-    tracker.start()
-    return tracker
-  }
-
-  _dhtAnnounce () {
-    if (this._dhtAnnouncing) return
-    debug('dht announce')
-
-    this._dhtAnnouncing = true
-    clearTimeout(this._dhtTimeout)
-
-    this.dht.announce(this.infoHash, this._port, err => {
-      this._dhtAnnouncing = false
-      debug('dht announce complete')
-
-      if (err) this.emit('warning', err)
-      this.emit('dhtAnnounce')
-
-      if (!this.destroyed) {
-        this._dhtTimeout = setTimeout(() => {
-          this._dhtAnnounce()
-        }, this._intervalMs + Math.floor(Math.random() * this._intervalMs / 5))
-        if (this._dhtTimeout.unref) this._dhtTimeout.unref()
-      }
-    })
-  }
-
-  _createLSD () {
-    const opts = Object.assign({}, {
-      infoHash: this.infoHash,
-      peerId: this.peerId,
-      port: this._port
-    })
-
-    const lsd = new LSD(opts)
-    lsd.on('warning', this._onWarning)
-    lsd.on('error', this._onError)
-    lsd.on('peer', this._onLSDPeer)
-    lsd.start()
-    return lsd
-  }
-}
-
-module.exports = Discovery
-
-}).call(this)}).call(this,require('_process'))
-},{"_process":285,"bittorrent-dht/client":151,"bittorrent-lsd":151,"bittorrent-tracker/client":12,"debug":26,"events":233,"run-parallel":90}],113:[function(require,module,exports){
 (function (Buffer){(function (){
 /*! torrent-piece. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
 const BLOCK_LENGTH = 1 << 14
@@ -17866,7 +17779,7 @@ Object.defineProperty(Piece, 'BLOCK_LENGTH', { value: BLOCK_LENGTH })
 module.exports = Piece
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":195}],114:[function(require,module,exports){
+},{"buffer":195}],113:[function(require,module,exports){
 (function (Buffer){(function (){
 /**
  * Convert a typed array to a Buffer without a copy
@@ -17895,7 +17808,7 @@ module.exports = function typedarrayToBuffer (arr) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"buffer":195,"is-typedarray":37}],115:[function(require,module,exports){
+},{"buffer":195,"is-typedarray":37}],114:[function(require,module,exports){
 var bufferAlloc = require('buffer-alloc')
 
 var UINT_32_MAX = Math.pow(2, 32)
@@ -17928,7 +17841,7 @@ exports.decode = function (buf, offset) {
 exports.encode.bytes = 8
 exports.decode.bytes = 8
 
-},{"buffer-alloc":19}],116:[function(require,module,exports){
+},{"buffer-alloc":19}],115:[function(require,module,exports){
 module.exports = remove
 
 function remove (arr, i) {
@@ -17942,7 +17855,7 @@ function remove (arr, i) {
   return last
 }
 
-},{}],117:[function(require,module,exports){
+},{}],116:[function(require,module,exports){
 (function (Buffer){(function (){
 /*! ut_metadata. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
 const { EventEmitter } = require('events')
@@ -18190,7 +18103,7 @@ module.exports = metadata => {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"bencode":6,"bitfield":10,"buffer":195,"debug":26,"events":233,"simple-sha1":96}],118:[function(require,module,exports){
+},{"bencode":6,"bitfield":10,"buffer":195,"debug":26,"events":233,"simple-sha1":96}],117:[function(require,module,exports){
 (function (global){(function (){
 
 /**
@@ -18261,7 +18174,7 @@ function config (name) {
 }
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],119:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 (function (Buffer){(function (){
 const bs = require('binary-search')
 const EventEmitter = require('events')
@@ -18741,7 +18654,7 @@ const MIN_FRAGMENT_DURATION = 1 // second
 module.exports = MP4Remuxer
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"binary-search":9,"buffer":195,"events":233,"mp4-box-encoding":54,"mp4-stream":57,"range-slice-stream":70}],120:[function(require,module,exports){
+},{"binary-search":9,"buffer":195,"events":233,"mp4-box-encoding":54,"mp4-stream":57,"range-slice-stream":70}],119:[function(require,module,exports){
 const MediaElementWrapper = require('mediasource')
 const pump = require('pump')
 
@@ -18869,12 +18782,12 @@ VideoStream.prototype = {
 
 module.exports = VideoStream
 
-},{"./mp4-remuxer":119,"mediasource":46,"pump":64}],121:[function(require,module,exports){
+},{"./mp4-remuxer":118,"mediasource":46,"pump":64}],120:[function(require,module,exports){
 /*! webtorrent-hybrid. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
 require('./lib/global')
 module.exports = require('webtorrent')
 
-},{"./lib/global":122,"webtorrent":123}],122:[function(require,module,exports){
+},{"./lib/global":121,"webtorrent":122}],121:[function(require,module,exports){
 const createTorrent = require('create-torrent')
 const wrtc = require('wrtc')
 
@@ -18884,7 +18797,7 @@ globalThis.WEBTORRENT_ANNOUNCE = createTorrent.announceList
 
 globalThis.WRTC = wrtc
 
-},{"create-torrent":25,"wrtc":132}],123:[function(require,module,exports){
+},{"create-torrent":25,"wrtc":132}],122:[function(require,module,exports){
 (function (Buffer){(function (){
 /*! webtorrent. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
 /* global FileList, ServiceWorker */
@@ -19452,7 +19365,7 @@ function isFileList (obj) {
 module.exports = WebTorrent
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"./lib/conn-pool.js":151,"./lib/peer":126,"./lib/torrent.js":128,"./package.json":130,"bittorrent-dht/client":151,"buffer":195,"create-torrent":25,"debug":26,"events":233,"load-ip-set":151,"parse-torrent":62,"path":278,"queue-microtask":65,"randombytes":68,"run-parallel":90,"simple-concat":93,"simple-peer":95,"simple-sha1":96,"speed-limiter":99,"speedometer":103}],124:[function(require,module,exports){
+},{"./lib/conn-pool.js":151,"./lib/peer":125,"./lib/torrent.js":127,"./package.json":130,"bittorrent-dht/client":151,"buffer":195,"create-torrent":25,"debug":26,"events":233,"load-ip-set":151,"parse-torrent":62,"path":278,"queue-microtask":65,"randombytes":68,"run-parallel":90,"simple-concat":93,"simple-peer":95,"simple-sha1":96,"speed-limiter":99,"speedometer":103}],123:[function(require,module,exports){
 const stream = require('stream')
 const debugFactory = require('debug')
 const eos = require('end-of-stream')
@@ -19561,7 +19474,7 @@ class FileStream extends stream.Readable {
 
 module.exports = FileStream
 
-},{"debug":26,"end-of-stream":28,"stream":310}],125:[function(require,module,exports){
+},{"debug":26,"end-of-stream":28,"stream":310}],124:[function(require,module,exports){
 const EventEmitter = require('events')
 const { PassThrough } = require('stream')
 const path = require('path')
@@ -19801,7 +19714,7 @@ class File extends EventEmitter {
 
 module.exports = File
 
-},{"./file-stream.js":124,"end-of-stream":28,"events":233,"mime":49,"path":278,"queue-microtask":65,"range-parser":69,"render-media":87,"stream":310,"stream-to-blob":105,"stream-to-blob-url":104,"stream-with-known-length-to-buffer":106}],126:[function(require,module,exports){
+},{"./file-stream.js":123,"end-of-stream":28,"events":233,"mime":49,"path":278,"queue-microtask":65,"range-parser":69,"render-media":87,"stream":310,"stream-to-blob":105,"stream-to-blob-url":104,"stream-with-known-length-to-buffer":106}],125:[function(require,module,exports){
 const EventEmitter = require('events')
 const { Transform } = require('stream')
 const arrayRemove = require('unordered-array-remove')
@@ -20191,7 +20104,7 @@ class Peer extends EventEmitter {
   }
 }
 
-},{"bittorrent-protocol":11,"debug":26,"events":233,"stream":310,"unordered-array-remove":116}],127:[function(require,module,exports){
+},{"bittorrent-protocol":11,"debug":26,"events":233,"stream":310,"unordered-array-remove":115}],126:[function(require,module,exports){
 
 /**
  * Mapping of torrent pieces to their respective availability in the torrent swarm. Used
@@ -20301,7 +20214,7 @@ class RarityMap {
 
 module.exports = RarityMap
 
-},{}],128:[function(require,module,exports){
+},{}],127:[function(require,module,exports){
 (function (process,global){(function (){
 /* global Blob */
 
@@ -22256,7 +22169,7 @@ function noop () {}
 module.exports = Torrent
 
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"../package.json":130,"./file.js":125,"./peer.js":126,"./rarity-map.js":127,"./server.js":151,"./utp.js":151,"./webconn.js":129,"_process":285,"addr-to-ip-port":2,"bitfield":10,"cache-chunk-store":21,"chunk-store-stream/write":22,"cpus":24,"debug":26,"events":233,"fs":151,"fs-chunk-store":47,"immediate-chunk-store":34,"lt_donthave":44,"memory-chunk-store":47,"multistream":59,"net":151,"os":151,"parse-torrent":62,"path":278,"pump":64,"queue-microtask":65,"random-iterate":67,"run-parallel":90,"run-parallel-limit":89,"simple-get":94,"simple-sha1":96,"speedometer":103,"torrent-discovery":112,"torrent-piece":113,"ut_metadata":117,"ut_pex":151}],129:[function(require,module,exports){
+},{"../package.json":130,"./file.js":124,"./peer.js":125,"./rarity-map.js":126,"./server.js":151,"./utp.js":151,"./webconn.js":128,"_process":285,"addr-to-ip-port":2,"bitfield":10,"cache-chunk-store":21,"chunk-store-stream/write":22,"cpus":24,"debug":26,"events":233,"fs":151,"fs-chunk-store":47,"immediate-chunk-store":34,"lt_donthave":44,"memory-chunk-store":47,"multistream":59,"net":151,"os":151,"parse-torrent":62,"path":278,"pump":64,"queue-microtask":65,"random-iterate":67,"run-parallel":90,"run-parallel-limit":89,"simple-get":94,"simple-sha1":96,"speedometer":103,"torrent-discovery":129,"torrent-piece":112,"ut_metadata":116,"ut_pex":151}],128:[function(require,module,exports){
 (function (Buffer){(function (){
 const { default: BitField } = require('bitfield')
 const debugFactory = require('debug')
@@ -22477,7 +22390,233 @@ class WebConn extends Wire {
 module.exports = WebConn
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"../package.json":130,"bitfield":10,"bittorrent-protocol":11,"buffer":195,"debug":26,"lt_donthave":44,"simple-get":94,"simple-sha1":96}],130:[function(require,module,exports){
+},{"../package.json":130,"bitfield":10,"bittorrent-protocol":11,"buffer":195,"debug":26,"lt_donthave":44,"simple-get":94,"simple-sha1":96}],129:[function(require,module,exports){
+(function (process){(function (){
+/*! torrent-discovery. MIT License. WebTorrent LLC <https://webtorrent.io/opensource> */
+const debug = require('debug')('torrent-discovery')
+const DHT = require('bittorrent-dht/client') // empty object in browser
+const EventEmitter = require('events').EventEmitter
+const parallel = require('run-parallel')
+const Tracker = require('bittorrent-tracker/client')
+const LSD = require('bittorrent-lsd')
+
+class Discovery extends EventEmitter {
+  constructor (opts) {
+    super()
+
+    if (!opts.peerId) throw new Error('Option `peerId` is required')
+    if (!opts.infoHash) throw new Error('Option `infoHash` is required')
+    if (!process.browser && !opts.port) throw new Error('Option `port` is required')
+
+    this.peerId = typeof opts.peerId === 'string'
+      ? opts.peerId
+      : opts.peerId.toString('hex')
+    this.infoHash = typeof opts.infoHash === 'string'
+      ? opts.infoHash.toLowerCase()
+      : opts.infoHash.toString('hex')
+    this._port = opts.port // torrent port
+    this._userAgent = opts.userAgent // User-Agent header for http requests
+
+    this.destroyed = false
+
+    this._announce = opts.announce || []
+    this._intervalMs = opts.intervalMs || (15 * 60 * 1000)
+    this._trackerOpts = null
+    this._dhtAnnouncing = false
+    this._dhtTimeout = false
+    this._internalDHT = false // is the DHT created internally?
+
+    this._onWarning = err => {
+      this.emit('warning', err)
+    }
+    this._onError = err => {
+      this.emit('error', err)
+    }
+    this._onDHTPeer = (peer, infoHash) => {
+      if (infoHash.toString('hex') !== this.infoHash) return
+      this.emit('peer', `${peer.host}:${peer.port}`, 'dht')
+    }
+    this._onTrackerPeer = peer => {
+      this.emit('peer', peer, 'tracker')
+    }
+    this._onTrackerAnnounce = () => {
+      this.emit('trackerAnnounce')
+    }
+    this._onLSDPeer = (peer, infoHash) => {
+      this.emit('peer', peer, 'lsd')
+    }
+
+    const createDHT = (port, opts) => {
+      const dht = new DHT(opts)
+      dht.on('warning', this._onWarning)
+      dht.on('error', this._onError)
+      dht.listen(port)
+      this._internalDHT = true
+      return dht
+    }
+
+    if (opts.tracker === false) {
+      this.tracker = null
+    } else if (opts.tracker && typeof opts.tracker === 'object') {
+      this._trackerOpts = Object.assign({}, opts.tracker)
+      this.tracker = this._createTracker()
+    } else {
+      this.tracker = this._createTracker()
+    }
+
+    if (opts.dht === false || typeof DHT !== 'function') {
+      this.dht = null
+    } else if (opts.dht && typeof opts.dht.addNode === 'function') {
+      this.dht = opts.dht
+    } else if (opts.dht && typeof opts.dht === 'object') {
+      this.dht = createDHT(opts.dhtPort, opts.dht)
+    } else {
+      this.dht = createDHT(opts.dhtPort)
+    }
+
+    if (this.dht) {
+      this.dht.on('peer', this._onDHTPeer)
+      this._dhtAnnounce()
+    }
+
+    if (opts.lsd === false || typeof LSD !== 'function') {
+      this.lsd = null
+    } else {
+      this.lsd = this._createLSD()
+    }
+  }
+
+  updatePort (port) {
+    if (port === this._port) return
+    this._port = port
+
+    if (this.dht) this._dhtAnnounce()
+
+    if (this.tracker) {
+      this.tracker.stop()
+      this.tracker.destroy(() => {
+        this.tracker = this._createTracker()
+      })
+    }
+  }
+
+  complete (opts) {
+    if (this.tracker) {
+      this.tracker.complete(opts)
+    }
+  }
+
+  destroy (cb) {
+    if (this.destroyed) return
+    this.destroyed = true
+
+    clearTimeout(this._dhtTimeout)
+
+    const tasks = []
+
+    if (this.tracker) {
+      this.tracker.stop()
+      this.tracker.removeListener('warning', this._onWarning)
+      this.tracker.removeListener('error', this._onError)
+      this.tracker.removeListener('peer', this._onTrackerPeer)
+      this.tracker.removeListener('update', this._onTrackerAnnounce)
+      tasks.push(cb => {
+        this.tracker.destroy(cb)
+      })
+    }
+
+    if (this.dht) {
+      this.dht.removeListener('peer', this._onDHTPeer)
+    }
+
+    if (this._internalDHT) {
+      this.dht.removeListener('warning', this._onWarning)
+      this.dht.removeListener('error', this._onError)
+      tasks.push(cb => {
+        this.dht.destroy(cb)
+      })
+    }
+
+    if (this.lsd) {
+      this.lsd.removeListener('warning', this._onWarning)
+      this.lsd.removeListener('error', this._onError)
+      this.lsd.removeListener('peer', this._onLSDPeer)
+      tasks.push(cb => {
+        this.lsd.destroy(cb)
+      })
+    }
+
+    parallel(tasks, cb)
+
+    // cleanup
+    this.dht = null
+    this.tracker = null
+    this.lsd = null
+    this._announce = null
+  }
+
+  _createTracker () {
+    const opts = Object.assign({}, this._trackerOpts, {
+      infoHash: this.infoHash,
+      announce: this._announce,
+      peerId: this.peerId,
+      port: this._port,
+      userAgent: this._userAgent
+    })
+
+    const tracker = new Tracker(opts)
+    tracker.on('warning', this._onWarning)
+    tracker.on('error', this._onError)
+    tracker.on('peer', this._onTrackerPeer)
+    tracker.on('update', this._onTrackerAnnounce)
+    tracker.setInterval(this._intervalMs)
+    tracker.start()
+    return tracker
+  }
+
+  _dhtAnnounce () {
+    if (this._dhtAnnouncing) return
+    debug('dht announce')
+
+    this._dhtAnnouncing = true
+    clearTimeout(this._dhtTimeout)
+
+    this.dht.announce(this.infoHash, this._port, err => {
+      this._dhtAnnouncing = false
+      debug('dht announce complete')
+
+      if (err) this.emit('warning', err)
+      this.emit('dhtAnnounce')
+
+      if (!this.destroyed) {
+        this._dhtTimeout = setTimeout(() => {
+          this._dhtAnnounce()
+        }, this._intervalMs + Math.floor(Math.random() * this._intervalMs / 5))
+        if (this._dhtTimeout.unref) this._dhtTimeout.unref()
+      }
+    })
+  }
+
+  _createLSD () {
+    const opts = Object.assign({}, {
+      infoHash: this.infoHash,
+      peerId: this.peerId,
+      port: this._port
+    })
+
+    const lsd = new LSD(opts)
+    lsd.on('warning', this._onWarning)
+    lsd.on('error', this._onError)
+    lsd.on('peer', this._onLSDPeer)
+    lsd.start()
+    return lsd
+  }
+}
+
+module.exports = Discovery
+
+}).call(this)}).call(this,require('_process'))
+},{"_process":285,"bittorrent-dht/client":151,"bittorrent-lsd":151,"bittorrent-tracker/client":12,"debug":26,"events":233,"run-parallel":90}],130:[function(require,module,exports){
 module.exports={
   "version": "1.8.1"
 }
@@ -48469,8 +48608,8 @@ module.exports = {
 };
 
 },{}],347:[function(require,module,exports){
-arguments[4][118][0].apply(exports,arguments)
-},{"dup":118}],348:[function(require,module,exports){
+arguments[4][117][0].apply(exports,arguments)
+},{"dup":117}],348:[function(require,module,exports){
 module.exports = extend
 
 var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -48493,18 +48632,3 @@ function extend() {
 
 },{}]},{},[1])(1)
 });
-
-</script>
-<script>
-const easypeers = new Easypeers('Some unique topic', {maxPeers: 3, coverage: 0.33})
-console.log('My address:', easypeers.address)
-easypeers.on('connect', peer => {
-  console.log('Peeer connected!', peer)
-})
-easypeers.on('message', message => {
-  console.log(message)
-})
-easypeers.on('disconnect', peer => {
-  console.log('Peeer disconnected!', peer)
-})
-</script>

@@ -1,5 +1,7 @@
-const Easypeers = require('../index.js')
+<p>Easypeers</p>
+<script src="index.js"></script>
 
+<script>
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6
 })
@@ -7,7 +9,8 @@ const easypeers = new Easypeers('Some unique topic', {
 console.log('My address:', easypeers.address)
 
 easypeers.on('message', data => {
-  console.log(data.message.trim())
+  if(data.toString().trim() == '_wires') return console.log(easypeers.wireCount)
+  console.log(data.message)
 })
 
 easypeers.on('connect', peer => {
@@ -17,9 +20,4 @@ easypeers.on('connect', peer => {
 easypeers.on('disconnect', peer => {
   console.log('Peer disconnected!', peer)
 })
-
-// Send messages to peers from the terminal
-process.stdin.on('data', data => {
-  if(data.toString().trim() == '_wires') return console.log(easypeers.wireCount)
-  easypeers.send(data)
-})
+</script>

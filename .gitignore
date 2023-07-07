@@ -1,3 +1,5 @@
+test
+*.tmp
 # Logs
 tests
 Backup

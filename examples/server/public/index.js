@@ -1,5 +1,5 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Easypeers = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-(function (process){(function (){
+(function (process,Buffer){(function (){
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent-hybrid')
@@ -8,6 +8,24 @@ const wrtc = require('wrtc')
 EventEmitter.defaultMaxListeners = 100
 
 const PREFIX = 'easypeers-'
+
+let keyPair
+
+function generateKeys() {
+    keyPair = crypto.createECDH('prime256v1')
+    keyPair.generateKeys()
+    return keyPair
+}
+
+function exportKey(publicKey) {
+    return publicKey
+}
+
+function deriveSecret(theirPublicKey) {
+    let sharedSecret = keyPair.computeSecret(theirPublicKey)
+    let key = crypto.createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0)) // IV should ideally be random and unique for each encryption
+    return key
+}
 
 const Easypeers = function(identifier, args){
   const easypeers = this
@@ -21,11 +39,11 @@ const Easypeers = function(identifier, args){
   easypeers.off = events.off.bind(events)
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
-  easypeers.debug = easypeers.opts.debug || false
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
-  easypeers.address = crypto.randomBytes(20).toString('hex')
-  easypeers.swarmHashes = []
+  easypeers.identifier = easypeers.infoHash
+    || crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
+    || crypto.randomBytes(20).toString('hex')
+  easypeers.address = easypeers.address || crypto.randomBytes(20).toString('hex')
 
   easypeers.wires = {}
   let seen = {}
@@ -39,7 +57,8 @@ const Easypeers = function(identifier, args){
     announce: [
       easypeers.opts.tracker ? easypeers.opts.tracker : '',
       'wss://tracker.peer.ooo',
-      'wss://tracker.openwebtorrent.com'
+      'wss://tracker.openwebtorrent.com',
+      'ws://localhost:8000'
     ],
     port: process ? easypeers.opts.port || 6881 : undefined
   }
@@ -221,8 +240,8 @@ const Easypeers = function(identifier, args){
 }
 
 module.exports = Easypeers
-}).call(this)}).call(this,require('_process'))
-},{"_process":285,"crypto":204,"events":233,"webtorrent-hybrid":120,"wrtc":132}],2:[function(require,module,exports){
+}).call(this)}).call(this,require('_process'),require("buffer").Buffer)
+},{"_process":285,"buffer":195,"crypto":204,"events":233,"webtorrent-hybrid":120,"wrtc":132}],2:[function(require,module,exports){
 const ADDR_RE = /^\[?([^\]]+)]?:(\d+)$/ // ipv4/ipv6/hostname + port
 
 let cache = new Map()

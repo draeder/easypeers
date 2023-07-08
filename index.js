@@ -7,22 +7,22 @@ EventEmitter.defaultMaxListeners = 100
 
 const PREFIX = 'easypeers-'
 
-let keyPair;
+let keyPair
 
 function generateKeys() {
-    keyPair = crypto.createECDH('prime256v1');
-    keyPair.generateKeys();
-    return keyPair;
+    keyPair = crypto.createECDH('prime256v1')
+    keyPair.generateKeys()
+    return keyPair
 }
 
 function exportKey(publicKey) {
-    return publicKey;
+    return publicKey
 }
 
 function deriveSecret(theirPublicKey) {
-    let sharedSecret = keyPair.computeSecret(theirPublicKey);
-    let key = crypto.createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0)); // IV should ideally be random and unique for each encryption
-    return key;
+    let sharedSecret = keyPair.computeSecret(theirPublicKey)
+    let key = crypto.createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0)) // IV should ideally be random and unique for each encryption
+    return key
 }
 
 const Easypeers = function(identifier, args){
@@ -38,8 +38,10 @@ const Easypeers = function(identifier, args){
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
-  easypeers.address = crypto.randomBytes(20).toString('hex')
+  easypeers.identifier = easypeers.infoHash
+    || crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
+    || crypto.randomBytes(20).toString('hex')
+  easypeers.address = easypeers.address || crypto.randomBytes(20).toString('hex')
 
   easypeers.wires = {}
   let seen = {}
@@ -53,7 +55,7 @@ const Easypeers = function(identifier, args){
     announce: [
       easypeers.opts.tracker ? easypeers.opts.tracker : '',
       'wss://tracker.peer.ooo',
-      'wss://tracker.openwebtorrent.com'
+      'wss://tracker.openwebtorrent.com',
     ],
     port: process ? easypeers.opts.port || 6881 : undefined
   }
@@ -127,7 +129,7 @@ const Easypeers = function(identifier, args){
     // Partial mesh
     const hex2bin = (data) => data.split('').map(i => parseInt(i, 16).toString(2).padStart(4, '0')).join('')
     let closeness = hex2bin(easypeers.address) - hex2bin(wire.peerId)
-    closeness = Math.abs(closeness)    
+    closeness = Math.abs(closeness)
     let closenessString = closeness.toString()
     let firstDigit = closenessString.charAt(0)
     closeness = parseInt(firstDigit)

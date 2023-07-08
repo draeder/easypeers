@@ -38,7 +38,7 @@ const Easypeers = function(identifier, args){
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = easypeers.infoHash
+  easypeers.identifier = easypeers.opts.infoHash
     || crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
     || crypto.randomBytes(20).toString('hex')
   easypeers.address = easypeers.address || crypto.randomBytes(20).toString('hex')

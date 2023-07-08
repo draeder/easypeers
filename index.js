@@ -27,7 +27,12 @@ function deriveSecret(theirPublicKey) {
 
 const Easypeers = function(identifier, args){
   const easypeers = this
-  !args ? easypeers.opts = {} : easypeers.opts = {...args}
+  // !args ? easypeers.opts = {} : easypeers.opts = {...args}
+  if(typeof identifier === 'object'){
+    easypeers.opts = {...identifier}
+  } else {
+    easypeers.opts = {...args}
+  }
 
   const events = new EventEmitter()
   easypeers.on = events.on.bind(events)
@@ -38,10 +43,10 @@ const Easypeers = function(identifier, args){
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = easypeers.opts.infoHash
+  easypeers.identifier = easypeers.opts.identifier
     || crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
     || crypto.randomBytes(20).toString('hex')
-  easypeers.address = easypeers.address || crypto.randomBytes(20).toString('hex')
+  easypeers.address = easypeers.opts.address || crypto.randomBytes(20).toString('hex')
 
   easypeers.wires = {}
   let seen = {}

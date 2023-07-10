@@ -1,7 +1,7 @@
 const Easypeers = require('../index.js')
 
 const easypeers = new Easypeers('Some unique topic', {
-  maxPeers: 1,
+  maxPeers: 6,
   identifier: '', // used to pass in a static identifier (under development)
   tracker: 'ws://localhost:8000'
 })

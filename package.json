@@ -26,7 +26,8 @@
   "homepage": "https://github.com/draeder/easypeers#readme",
   "dependencies": {
     "express": "^4.18.2",
-    "webtorrent-hybrid": "^4.1.3"
+    "webtorrent-hybrid": "^4.1.3",
+    "zerok": "^0.0.1"
   },
   "directories": {
     "example": "examples",

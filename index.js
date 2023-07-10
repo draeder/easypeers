@@ -1,6 +1,7 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent-hybrid')
+const Zerok = require('zerok')
 
 EventEmitter.defaultMaxListeners = 25
 
@@ -8,6 +9,8 @@ const PREFIX = 'easypeers-'
 
 const Easypeers = function(identifier, args){
   const easypeers = this
+
+  zerok = new Zerok(256)
 
   if(typeof identifier === 'object'){
     easypeers.opts = {...identifier}
@@ -36,7 +39,7 @@ const Easypeers = function(identifier, args){
   hash.update(easypeers.identifier)
   const seed = hash.digest()
 
-  // Generate a deterministic keypair based on the seed
+  // // Generate a deterministic keypair based on the seed
   // const keyPair = ed25519.MakeKeypair(seed)
 
   // let publicKey = keyPair.publicKey.toString('hex')
@@ -175,7 +178,7 @@ const Easypeers = function(identifier, args){
         message: data,
       }
     }
-
+    message.proof = zerok.proof(easypeers.identifier + message.id + message.from)
     // validate message
     // message.proof = zero(keyPair.publicKey.toString('hex'), keyPair.publicKey.toString('hex'))
 
@@ -209,11 +212,15 @@ const Easypeers = function(identifier, args){
       }
 
       this.onMessage = function(message) {
+        let proof
         message = message.toString()
         if(message.includes(last)) return
         try {
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
+          console.log(message)
+          if(message) proof = zerok.proof(message.proof)
+          if(!proof) return
           message.has = []
           peers = Object.keys(easypeers.wires)
           peers.forEach(peer => {

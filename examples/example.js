@@ -14,11 +14,13 @@ easypeers.on('message', data => {
 })
 
 easypeers.on('connect', peer => {
-  console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  // Do something with connect events like:
+  // console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
 })
 
 easypeers.on('disconnect', peer => {
-  console.log('Peer disconnected!', peer)
+  // Do something with disconnect events like:
+  // console.log('Peer disconnected!', peer)
 })
 
 // Send messages to peers from the terminal

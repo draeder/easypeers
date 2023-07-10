@@ -2,23 +2,27 @@
 <script src="index.js"></script>
 
 <script>
+
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
-  identifier: ''
+  identifier: '', // used to pass in a static identifier (under development)
+  tracker: 'ws://localhost:8000'
 })
 
+console.log("Swarm id:", easypeers.identifier)
 console.log('My address:', easypeers.address)
 
 easypeers.on('message', data => {
-  if(data.toString().trim() == '_wires') return console.log(easypeers.wireCount)
-  console.log(data.message)
+  console.log(data.message.toString().trim())
 })
 
 easypeers.on('connect', peer => {
-  console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  // Do something with connect events like:
+  // console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
 })
 
 easypeers.on('disconnect', peer => {
-  console.log('Peer disconnected!', peer)
+  // Do something with disconnect events like:
+  // console.log('Peer disconnected!', peer)
 })
 </script>

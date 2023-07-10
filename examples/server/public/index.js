@@ -220,7 +220,6 @@ const Easypeers = function(identifier, args){
         try {
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
-          console.log(message)
           if(message) proof = zerok.proof(message.proof)
           if(!proof) return
           message.has = []

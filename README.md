@@ -51,7 +51,7 @@ As it is now, any peer can potentially both see and alter any message, including
 If you use this library, it is important to understand that it is experimental and currently designed for use as a raw protocol. You might consider applying your own security/encryption, or submitting a PR to help with Easypeers.
 
 ### Update
-Easypeers now uses Zero Knowledge Proof for message integrity and sender authenticity verification. If proof fails at any step of message propagation, on any peer, even those relaying the message that are not interested in it, the peer will cease propagating the message.
+Easypeers now uses Zero Knowledge Proof for swarm identification, sender authenticity verification and message integrity. If proof fails at any state of message propagation on any peer, the peer will cease propagating the message.
 
 
 # API Usage

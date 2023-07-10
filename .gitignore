@@ -1,6 +1,8 @@
 tmp
 test
 *.tmp
+
+package-lock.json
 # Logs
 tests
 Backup

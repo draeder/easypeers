@@ -1,33 +1,14 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent-hybrid')
-const wrtc = require('wrtc')
 
-EventEmitter.defaultMaxListeners = 100
+EventEmitter.defaultMaxListeners = 25
 
 const PREFIX = 'easypeers-'
 
-let keyPair
-
-function generateKeys() {
-    keyPair = crypto.createECDH('prime256v1')
-    keyPair.generateKeys()
-    return keyPair
-}
-
-function exportKey(publicKey) {
-    return publicKey
-}
-
-function deriveSecret(theirPublicKey) {
-    let sharedSecret = keyPair.computeSecret(theirPublicKey)
-    let key = crypto.createCipheriv('aes-256-gcm', sharedSecret, Buffer.alloc(12, 0)) // IV should ideally be random and unique for each encryption
-    return key
-}
-
 const Easypeers = function(identifier, args){
   const easypeers = this
-  // !args ? easypeers.opts = {} : easypeers.opts = {...args}
+
   if(typeof identifier === 'object'){
     easypeers.opts = {...identifier}
   } else {
@@ -42,11 +23,24 @@ const Easypeers = function(identifier, args){
   easypeers.off = events.off.bind(events)
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
+  if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
   easypeers.identifier = easypeers.opts.identifier
-    || crypto.createHash('sha1').update(PREFIX+identifier).digest().toString('hex')
+    || crypto.createHash('sha1').update(PREFIX+easypeers.opts.identifier).digest().toString('hex')
     || crypto.randomBytes(20).toString('hex')
   easypeers.address = easypeers.opts.address || crypto.randomBytes(20).toString('hex')
+
+
+  // Generate a SHA-256 hash of the swarmId
+  const hash = crypto.createHash('sha256')
+  hash.update(easypeers.identifier)
+  const seed = hash.digest()
+
+  // Generate a deterministic keypair based on the seed
+  // const keyPair = ed25519.MakeKeypair(seed)
+
+  // let publicKey = keyPair.publicKey.toString('hex')
+  // let privateKey = keyPair.privateKey.toString('hex')
 
   easypeers.wires = {}
   let seen = {}
@@ -56,7 +50,6 @@ const Easypeers = function(identifier, args){
   let opts = {
     infoHash: easypeers.identifier,
     peerId: easypeers.address,
-    wrtc: wrtc,
     announce: [
       easypeers.opts.tracker ? easypeers.opts.tracker : '',
       'wss://tracker.peer.ooo',
@@ -121,7 +114,7 @@ const Easypeers = function(identifier, args){
         torrent.announce[opts.announce]
       }
       easypeers.peerCount = torrent.numPeers
-      if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
+      // if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
       easypeers.emit('disconnect', wire.peerId)
     })
 
@@ -131,24 +124,16 @@ const Easypeers = function(identifier, args){
     // let closestPeerId = getClosestPeer(wire.peerId)
     // let furthestPeerId = getFurthestPeer(closestPeerId)
     
-    // Partial mesh
-    const hex2bin = (data) => data.split('').map(i => parseInt(i, 16).toString(2).padStart(4, '0')).join('')
-    let closeness = hex2bin(easypeers.address) - hex2bin(wire.peerId)
-    closeness = Math.abs(closeness)
-    let closenessString = closeness.toString()
-    let firstDigit = closenessString.charAt(0)
-    closeness = parseInt(firstDigit)
-
-    if(Math.trunc(Math.abs(closeness)) === 1 && easypeers.wireCount <= easypeers.maxPeers){
-      if (easypeers.wireCount < easypeers.maxPeers) {
-        easypeers.wires[wire.peerId] = wire
-        easypeers.wires[wire.peerId].use(_easypeers(easypeers.wires[wire.peerId]))
-        easypeers.wireCount++
-        easypeers.peerCount = torrent.numPeers
-      } else {
-        wire.destroy()
-      }
+    if (easypeers.wireCount < easypeers.maxPeers) {
+      easypeers.wires[wire.peerId] = wire
+      easypeers.wires[wire.peerId].use(_easypeers(easypeers.wires[wire.peerId]))
+      easypeers.wireCount++
+      easypeers.peerCount = torrent.numPeers
+    } else {
+      wire.destroy()
     }
+    console.log(easypeers.wireCount)
+
   })
 
   function isValidJSON(json) {
@@ -191,8 +176,17 @@ const Easypeers = function(identifier, args){
       }
     }
 
+    // validate message
+    // message.proof = zero(keyPair.publicKey.toString('hex'), keyPair.publicKey.toString('hex'))
+
     for(let wire in easypeers.wires){
-      easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
+      try{
+        let w = easypeers.wires[wire]
+        if(w)
+        easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
+      } catch (e) {
+        // ignore for now
+      }
     }
   })
   
@@ -229,8 +223,9 @@ const Easypeers = function(identifier, args){
             }
           })
         } catch (err){
-          easypeers.emit('message', message.toString());
+
         }
+        // if(message) easypeers.emit('message', message)
         if(message.from !== easypeers.address) easypeers.emit('message', message)
         last = message.id
       }

@@ -32,13 +32,7 @@ Use the browser developer tools console to send messages: `easypeers.send('your 
 ## Partial Mesh
 > A partial mesh helps minimize peer connections per peer. This reduces load.
 
-Easypeers uses a novel approach to connecting peers in their respsective peer groups. It is inspired by [Kademlia/DHT](https://en.wikipedia.org/wiki/Kademlia), along with [MMST](https://github.com/RangerMauve/mostly-minimal-spanning-tree), but is its own approach.
-
-The partial mesh networking logic connects peers by converting each peer ID hash to binary then subtracting the absolute value of the difference between the two binary numbers. If the whole number is `1` the peer is "close" and the wire is kept. Otherwise it is considered "far" and the wire for that peer is destroyed.
-
-In local testing, this approach is surprisingly reliable for creating a partial mesh network of peers.
-
-There are some occasions where a new peer is left in limbo with no connections because it can't find any "close" peers. This is under review.
+Configuring the `opts.maxPeers` value limits the number of peer connections per peer instance. Depending on your usecase, `opts.maxPeers = 6` appears to keep the network in tact through automatic peer rebalancing and network self-healing.
 
 ## Gossip Protocol
 > A gossip protocol is needed in partial mesh networks for peers to reach other peers they are not directly connected to.
@@ -55,6 +49,10 @@ Direct messaging should be relatively trivial now that broadcast messaging works
 As it is now, any peer can potentially both see and alter any message, including in ways that cause network flooding, effectively DDoS'ing the entire mesh. This is under review.
 
 If you use this library, it is important to understand that it is experimental and currently designed for use as a raw protocol. You might consider applying your own security/encryption, or submitting a PR to help with Easypeers.
+
+### Update
+Easypeers now uses Zero Knowledge Proof for message integrity and sender authenticity verification. If proof fails at any step of message propagation, on any peer, even those relaying the message that are not interested in it, the peer will cease propagating the message.
+
 
 # API Usage
 ## Node

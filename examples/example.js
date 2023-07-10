@@ -1,7 +1,7 @@
 const Easypeers = require('../index.js')
 
 const easypeers = new Easypeers('Some unique topic', {
-  maxPeers: 6,
+  maxPeers: 1,
   identifier: 'd385a562d5ad561f7130e51cb3c65b9fa08ae96e',
   tracker: 'ws://localhost:8000'
 })
@@ -10,7 +10,7 @@ console.log("Swarm id:", easypeers.identifier)
 console.log('My address:', easypeers.address)
 
 easypeers.on('message', data => {
-  console.log(data.message.trim())
+  console.log(data.message.toString().trim())
 })
 
 easypeers.on('connect', peer => {
@@ -23,6 +23,5 @@ easypeers.on('disconnect', peer => {
 
 // Send messages to peers from the terminal
 process.stdin.on('data', data => {
-  if(data.toString().trim() == '_wires') return console.log(easypeers.wireCount)
   easypeers.send(data)
 })

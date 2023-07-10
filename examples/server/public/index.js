@@ -137,8 +137,6 @@ const Easypeers = function(identifier, args){
     } else {
       wire.destroy()
     }
-    console.log(easypeers.wireCount)
-
   })
 
   function isValidJSON(json) {

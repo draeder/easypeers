@@ -13,9 +13,10 @@ easypeers.on('message', data => {
   console.log(data.message.toString().trim())
 })
 
-easypeers.on('connect', peer => {
+easypeers.once('connect', peer => {
   // Do something with connect events like:
   // console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  console.log('Connected to Easypeers')
 })
 
 easypeers.on('disconnect', peer => {

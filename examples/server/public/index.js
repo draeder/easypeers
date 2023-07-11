@@ -114,7 +114,8 @@ const Easypeers = function(identifier, args){
       if(easypeers.wireCount < 0) easypeers.wireCount = 0
       delete easypeers.wires[wire.peerId]
 
-      if(torrent && torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers){
+      if(torrent && torrent.numPeers <= 2 && torrent.numPeers < easypeers.maxPeers
+        && easypeers.wireCount < 2 ){
         torrent.resume()
         torrent.announce[opts.announce]
       }

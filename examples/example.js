@@ -3,6 +3,7 @@ const Easypeers = require('../index.js')
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
   identifier: '', // used to pass in a static identifier (under development)
+  address: '', // used to pass in a staic peer address, needs work
   tracker: 'ws://localhost:8000'
 })
 

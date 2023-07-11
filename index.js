@@ -8,9 +8,9 @@ EventEmitter.defaultMaxListeners = 25
 const PREFIX = 'easypeers-'
 
 const Easypeers = function(identifier, args){
-  const easypeers = this
+  let easypeers = this
 
-  zerok = new Zerok(256)
+  let zerok = new Zerok(256)
 
   if(typeof identifier === 'object'){
     easypeers.opts = {...identifier}
@@ -48,7 +48,7 @@ const Easypeers = function(identifier, args){
   easypeers.wires = {}
   let seen = {}
 
-  let client = new WebTorrent({dht:true, lsd:false, peerId:easypeers.address})
+  let client = new WebTorrent({dht:false, lsd:false, peerId:easypeers.address})
   
   let opts = {
     infoHash: easypeers.identifier,
@@ -106,6 +106,14 @@ const Easypeers = function(identifier, args){
   }
   
   easypeers.wireCount = 0
+
+  // Recreate instance if no peers after timeout
+  setInterval(()=>{
+    if(easypeers.wireCount == 0) {
+      easypeers = new Easypeers(easypeers.opts)
+    }
+  }, easypeers.timeout)
+
   torrent.on("wire", function(wire) {
     wire.on('close', ()=>{
       easypeers.wireCount--
@@ -120,10 +128,12 @@ const Easypeers = function(identifier, args){
       easypeers.peerCount = torrent.numPeers
       // if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
       easypeers.emit('disconnect', wire.peerId)
+      wire.removeAllListeners()
+      wire = null
     })
 
     // Avoid duplicate connections to existing peers
-    if(easypeers.wires.hasOwnProperty(wire.peerId)) return
+    if(easypeers.wires.hasOwnProperty(wire.peerId) || wire.peerId === easypeers.address) return
     
     // let closestPeerId = getClosestPeer(wire.peerId)
     // let furthestPeerId = getFurthestPeer(closestPeerId)
@@ -152,11 +162,10 @@ const Easypeers = function(identifier, args){
     data = data.toString()//.trim()
   
     let message = {}
-  
+
     if(!isNaN(data)) {
       message = {
         id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
-        from: easypeers.address,
         has: Object.keys(easypeers.wires),
         message: data,
       }
@@ -172,12 +181,19 @@ const Easypeers = function(identifier, args){
     } else {
       message = {
         id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
-        from: easypeers.address,
         has: Object.keys(easypeers.wires),
         message: data,
       }
     }
-    message.proof = zerok.proof(easypeers.identifier + message.id + message.from)
+
+    message.from = easypeers.address
+
+    message.certificate = {
+      id: zerok.proof(message.id),
+      from: zerok.proof([message.from]),
+      message: zerok.proof(message.message),
+      pubkey: zerok.keypair.publicKey
+    }
     // validate message
     // message.proof = zero(keyPair.publicKey.toString('hex'), keyPair.publicKey.toString('hex'))
 
@@ -192,9 +208,9 @@ const Easypeers = function(identifier, args){
     }
   })
   
-  setInterval(()=>{
-    torrent.announce[opts.announce]
-  }, easypeers.timeout)
+  // setInterval(()=>{
+  //   torrent.announce[opts.announce]
+  // }, easypeers.timeout)
 
   let last
   let _easypeers = () => {
@@ -211,26 +227,31 @@ const Easypeers = function(identifier, args){
       }
 
       this.onMessage = function(message) {
-        let proof
         message = message.toString()
-        if(message.includes(last)) return
+        if(message.includes(last) || !message) return
         try {
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
-          if(message) proof = zerok.proof(message.proof)
-          if(!proof) return
+          if(
+            !zerok.verify(message.id, message.certificate.id, message.certificate.pubkey)
+            || !zerok.verify(message.from, message.certificate.from, message.certificate.pubkey)
+            || !zerok.verify(message.message, message.certificate.message, message.certificate.pubkey)
+          ) {
+            return
+          }
+          
           message.has = []
           peers = Object.keys(easypeers.wires)
           peers.forEach(peer => {
+            // message.message = "CoRrUpTed" // test mainpulating proof
             if(!message.has.includes(peer)){
               message.has.push(peer)
               easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message));
             }
           })
         } catch (err){
-
+          // no log for now
         }
-        // if(message) easypeers.emit('message', message)
         if(message.from !== easypeers.address) easypeers.emit('message', message)
         last = message.id
       }

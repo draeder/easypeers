@@ -1,6 +1,6 @@
 {
   "name": "easypeers",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Easy *serverless* swarms of WebRTC peers over WebTorrent",
   "main": "index.js",
   "scripts": {

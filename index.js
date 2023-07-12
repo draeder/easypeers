@@ -4,6 +4,12 @@ const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent')
 const Zerok = require('zerok')
 
+const Bottleneck = require("bottleneck")
+
+const limiter = new Bottleneck({
+  minTime: 100 // 100 milliseconds
+})
+
 EventEmitter.defaultMaxListeners = 25
 
 const PREFIX = 'easypeers-'
@@ -222,44 +228,61 @@ const Easypeers = function(identifier, args){
         if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (5 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
       }
-
+      
+      let sentMessages = {}
+      let last
+      
       this.onMessage = function(message) {
         message = message.toString()
-        if(
-          !message
-          || message.includes(last)
-          || message.has // && message.has.includes(easypeers.peerId)) 
-        )
-        {
-          return
-        }
+        if (!message) return
+      
         try {
+          let messageId = message.substring(0, message.indexOf(':'))
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
-          if(
+      
+          if (
             !zerok.verify(message.id, message.certificate.id, message.certificate.pubkey)
             || !zerok.verify(message.from, message.certificate.from, message.certificate.pubkey)
             || !zerok.verify(message.message, message.certificate.message, message.certificate.pubkey)
           ) {
             return
           }
-          
-          message.has = []
-          if(!message.has.includes(easypeers.address)) message.has.push(easypeers.address)
-          
-          peers = Object.keys(easypeers.wires)
+      
+          // Add timestamp to the message if it doesn't have one
+          if (!message.timestamp) {
+            message.timestamp = new Date().getTime()
+          }
+      
+          // Check if the message has been processed before and has a newer timestamp
+          if ((messageId === last && message.timestamp <= sentMessages[messageId]) || (sentMessages[messageId] && message.timestamp <= sentMessages[messageId])) {
+            return
+          }
+      
+          // Update the last processed message and timestamp
+          last = messageId
+          sentMessages[messageId] = message.timestamp
+      
+          let peers = Object.keys(easypeers.wires)
           peers.forEach(peer => {
-            // message.message = "CoRrUpTed" // test mainpulating message
-            if(!message.has.includes(peer)){
-              message.has.push(peer)
-              easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message));
+            if (!message.has.includes(peer)) {
+              // Clone the message before manipulating it
+              let messageCopy = JSON.parse(JSON.stringify(message))
+              // Add the peer to message.has immediately before sending the message
+              messageCopy.has.push(peer)
+              limiter.schedule(() => {
+                easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(messageCopy))
+              })
             }
           })
-        } catch (err){
-          // no log for now
+      
+        } catch (err) {
+          // handle error
         }
-        if(message.from !== easypeers.address) easypeers.emit('message', message)
-        last = message.id
+      
+        if (message.from !== easypeers.address) {
+          easypeers.emit('message', message)
+        }
       }
     }
 

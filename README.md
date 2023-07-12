@@ -10,22 +10,27 @@ Connect peers together based on a shared topic and send direct(<== work in progr
 
 Works in both node and the browser!
 
+> Due to an unresolvble issue with the [node-wrtc](https://github.com/node-webrtc/node-webrtc) library (inexplicable segmentation faults), the node instances are now headless instances of puppeteer. Modifications to the API code are done in `examples\server\public\index.html`.
+
 ## Install
 ```
 npm i easypeers
 ```
 ## Run the examples
 ### Node
+Run a local server
 ```js
-> node examples/example.js
+> npm run serve
 ```
-Use the terminal to send messages and recieve messages between peers. Each terminal instance is a peer.
+
+Run a local peer instance.
+```js
+> npm run start
+```
+Use the terminal to send messages and recieve messages between peers.
 
 ### Browser
-```js
-> node examples/server/index.js
-```
-Then browse to `http://localhost:3000`.
+With your local server running, browse to `http://localhost:3000`.
 
 Use the browser developer tools console to send messages: `easypeers.send('your message')`
 

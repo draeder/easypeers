@@ -1,6 +1,7 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
-const WebTorrent = require('webtorrent-hybrid')
+
+const WebTorrent = require('webtorrent')
 const Zerok = require('zerok')
 
 EventEmitter.defaultMaxListeners = 25
@@ -24,6 +25,7 @@ const Easypeers = function(identifier, args){
   easypeers.emit = events.emit.bind(events)
   easypeers.send = (data) => {easypeers.emit('_send', data)}
   easypeers.off = events.off.bind(events)
+  easypeers.removeAllListeners = events.removeAllListeners.bind(events)
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
@@ -107,13 +109,6 @@ const Easypeers = function(identifier, args){
   
   easypeers.wireCount = 0
 
-  // Recreate instance if no peers after timeout
-  setInterval(()=>{
-    if(easypeers.wireCount == 0) {
-      easypeers = new Easypeers(easypeers.opts)
-    }
-  }, easypeers.timeout)
-
   torrent.on("wire", function(wire) {
     wire.on('close', ()=>{
       easypeers.wireCount--
@@ -126,14 +121,17 @@ const Easypeers = function(identifier, args){
         torrent.announce[opts.announce]
       }
       easypeers.peerCount = torrent.numPeers
-      // if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
+      if(wire._writableState.emitClose && seen[wire.peerId] && new Date().getTime() - seen[wire.peerId].when > new Date().getTime() - (2 * 60 * 1000))
       easypeers.emit('disconnect', wire.peerId)
       wire.removeAllListeners()
       wire = null
     })
 
     // Avoid duplicate connections to existing peers
-    if(easypeers.wires.hasOwnProperty(wire.peerId) || wire.peerId === easypeers.address) return
+    if(easypeers.wires.hasOwnProperty(wire.peerId)) {
+      wire.destroy()
+      return
+    }
     
     // let closestPeerId = getClosestPeer(wire.peerId)
     // let furthestPeerId = getFurthestPeer(closestPeerId)
@@ -145,6 +143,7 @@ const Easypeers = function(identifier, args){
       easypeers.peerCount = torrent.numPeers
     } else {
       wire.destroy()
+      return
     }
   })
 
@@ -159,7 +158,7 @@ const Easypeers = function(identifier, args){
 
   easypeers.on('_send', data => {
     if(typeof data === 'number') data = data.toString()
-    data = data.toString()//.trim()
+    data = data.toString()
   
     let message = {}
 
@@ -194,8 +193,6 @@ const Easypeers = function(identifier, args){
       message: zerok.proof(message.message),
       pubkey: zerok.keypair.publicKey
     }
-    // validate message
-    // message.proof = zero(keyPair.publicKey.toString('hex'), keyPair.publicKey.toString('hex'))
 
     for(let wire in easypeers.wires){
       try{
@@ -208,9 +205,9 @@ const Easypeers = function(identifier, args){
     }
   })
   
-  // setInterval(()=>{
-  //   torrent.announce[opts.announce]
-  // }, easypeers.timeout)
+  setInterval(()=>{
+    torrent.announce[opts.announce]
+  }, easypeers.timeout)
 
   let last
   let _easypeers = () => {
@@ -228,7 +225,14 @@ const Easypeers = function(identifier, args){
 
       this.onMessage = function(message) {
         message = message.toString()
-        if(message.includes(last) || !message) return
+        if(
+          !message
+          || message.includes(last)
+          || message.has // && message.has.includes(easypeers.peerId)) 
+        )
+        {
+          return
+        }
         try {
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
@@ -241,9 +245,11 @@ const Easypeers = function(identifier, args){
           }
           
           message.has = []
+          if(!message.has.includes(easypeers.address)) message.has.push(easypeers.address)
+          
           peers = Object.keys(easypeers.wires)
           peers.forEach(peer => {
-            // message.message = "CoRrUpTed" // test mainpulating proof
+            // message.message = "CoRrUpTed" // test mainpulating message
             if(!message.has.includes(peer)){
               message.has.push(peer)
               easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message));

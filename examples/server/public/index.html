@@ -7,10 +7,12 @@ const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
   bitLength: 64,
   //identifier: '', // used to pass in a static identifier (under development)
-  tracker: 'ws://localhost:8000'
+  tracker: 'ws://localhost:8000',
+  debug: false,
 })
 
 easypeers.on('message', data => {
+  if(!data) return
   console.log(data.message.toString().trim())
   // console.log(JSON.stringify(data))
   // console.log(Object.keys(data.has).length)

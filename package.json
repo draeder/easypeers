@@ -41,6 +41,7 @@
     "test": "test"
   },
   "devDependencies": {
+    "browserify": "^17.0.0",
     "mocha": "*",
     "nodemon": "^3.0.1"
   },

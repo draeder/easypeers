@@ -44,6 +44,14 @@ Configuring the `opts.maxPeers` value limits the number of peer connections per 
 
 Easypeers does this by having each peer route the message to all peers it knows about. It performs message deduplication by taking a sha1 hash of the message itself plus a random number which becomes the message ID. It further deduplicates messages by adding which peer IDs have already received the message to the message. In this way, peers gossip the message to their own known peers (except those that already recieved it), ultimately reaching full network saturation.
 
+> Object ish messages are tricky because of using puppeteer
+
+To send a message that you want to later be serialized as a parsable object, you will need to wrap the object with backticks like 
+```js
+`[]`
+```
+Then remove the backticks on the receiving peer(s). From there you may use `JSON.parse()`.
+
 > Direct messaging is currently under development
 
 Direct messaging should be relatively trivial now that broadcast messaging works as expected. The intent is to allow for sending messages from one peer to another, or a group of others.

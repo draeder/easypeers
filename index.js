@@ -23,16 +23,16 @@ const Easypeers = function(identifier, args){
   easypeers.on = events.on.bind(events)
   easypeers.once = events.once.bind(events)
   easypeers.emit = events.emit.bind(events)
-  easypeers.send = (data) => {easypeers.emit('_send', data)}
+  // easypeers.send = (to, data) => {easypeers.emit('_send', (to, data))}
   easypeers.off = events.off.bind(events)
   easypeers.removeAllListeners = events.removeAllListeners.bind(events)
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = easypeers.opts.identifier
+  easypeers.identifier = easypeers.opts.identifer 
     || crypto.createHash('sha1').update(PREFIX+easypeers.opts.identifier).digest().toString('hex')
-    || crypto.randomBytes(20).toString('hex')
+    || crypto.createHash('sha1').update(PREFIX+crypto.randomBytes(20).toString('hex')).digest().toString('hex')
   easypeers.address = easypeers.opts.address || crypto.randomBytes(20).toString('hex')
 
 
@@ -156,7 +156,8 @@ const Easypeers = function(identifier, args){
     }
   }
 
-  easypeers.on('_send', data => {
+  easypeers.send = (to, data) => {
+    if(!data) data = to
     if(typeof data === 'number') data = data.toString()
     data = data.toString()
   
@@ -203,7 +204,7 @@ const Easypeers = function(identifier, args){
         // ignore for now
       }
     }
-  })
+  }
   
   setInterval(()=>{
     torrent.announce[opts.announce]

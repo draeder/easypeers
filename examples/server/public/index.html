@@ -3,22 +3,28 @@
 
 <script>
 
-const easypeers = new Easypeers('Some unique topic', {
+const easypeers = new Easypeers('Some unique topic 1lln1lh1lh', {
   maxPeers: 6,
-  identifier: '', // used to pass in a static identifier (under development)
+  bitLength: 16,
+  //identifier: '', // used to pass in a static identifier (under development)
   tracker: 'ws://localhost:8000'
 })
 
-console.log("Swarm id:", easypeers.identifier)
-console.log('My address:', easypeers.address)
-
 easypeers.on('message', data => {
   console.log(data.message.toString().trim())
+  // console.log(JSON.stringify(data))
+  // console.log(Object.keys(data.has).length)
+  // if(easypeers.isValidJSON(data.message)) {
+  //  let dataObj = JSON.parse(data.message)
+  //  console.log(dataObj)
+  // }
 })
 
 easypeers.once('connect', peer => {
   // Do something with connect events like:
-  // console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  console.log("Swarm id: " +  easypeers.identifier)
+  console.log('My address: ' + easypeers.address)
   console.log('Connected to Easypeers')
 })
 

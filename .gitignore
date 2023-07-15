@@ -1,6 +1,7 @@
-tmp
+*tmp*
 test
 *.tmp
+*.bak
 
 package-lock.json
 # Logs

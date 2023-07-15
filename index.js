@@ -4,12 +4,6 @@ const { EventEmitter } = require('events')
 const WebTorrent = require('webtorrent')
 const Zerok = require('zerok')
 
-const Bottleneck = require("bottleneck")
-
-const limiter = new Bottleneck({
-  minTime: 100 // 100 milliseconds
-})
-
 EventEmitter.defaultMaxListeners = 25
 
 const PREFIX = 'easypeers-'
@@ -100,9 +94,9 @@ const Easypeers = function(identifier, args){
   function getClosestPeer(peerId){
     let diff = Object.keys(easypeers.wires).filter(x => {
       return x
-    });
+    })
     
-    let closest;
+    let closest
     if(diff.length > 0 && easypeers.address < diff[0]) {
       closest = [diff[0]]
     } else {
@@ -155,10 +149,10 @@ const Easypeers = function(identifier, args){
 
   function isValidJSON(json) {
     try {
-        JSON.parse(json);
-        return true;
+        JSON.parse(json)
+        return true
     } catch (e) {
-        return false;
+        return false
     }
   }
 
@@ -216,9 +210,11 @@ const Easypeers = function(identifier, args){
   }, easypeers.timeout)
 
   let last
+  let sentMessages = {}
+  let seenMessages = {}
   let _easypeers = () => {
     let swEasypeers = function(wire) {
-      easypeers.wires[wire.peerId].extendedHandshake.keys = 'SEA Pairs'; // establish SEA pairs here
+      easypeers.wires[wire.peerId].extendedHandshake.keys = 'SEA Pairs' // establish SEA pairs here
     
       this.onHandshake = (infoHash, peerId, extensions) => {
         seen[wire.peerId] = {when: new Date().getTime()}
@@ -228,16 +224,11 @@ const Easypeers = function(identifier, args){
         if(new Date().getTime() - seen[wire.peerId].when < new Date().getTime() - (5 * 60 * 1000))
         easypeers.emit('connect', wire.peerId)
       }
-      
-      let sentMessages = {}
-      let last
+
       
       this.onMessage = function(message) {
         message = message.toString()
-        if (!message) return
-      
         try {
-          let messageId = message.substring(0, message.indexOf(':'))
           message = message.substring(message.indexOf(':') + 1)
           message = JSON.parse(message)
       
@@ -249,41 +240,40 @@ const Easypeers = function(identifier, args){
             return
           }
       
-          // Add timestamp to the message if it doesn't have one
-          if (!message.timestamp) {
-            message.timestamp = new Date().getTime()
-          }
-      
-          // Check if the message has been processed before and has a newer timestamp
-          if ((messageId === last && message.timestamp <= sentMessages[messageId]) || (sentMessages[messageId] && message.timestamp <= sentMessages[messageId])) {
+          if (!seenMessages[message.id]) {
+            seenMessages[message.id] = true
+            easypeers.emit('message', message)
+          } else {
+            if(easypeers.opts.debug) console.log(`Duplicate message ${message.id} received, ignoring`)
             return
           }
       
-          // Update the last processed message and timestamp
-          last = messageId
-          sentMessages[messageId] = message.timestamp
-      
+          message.has.push(easypeers.address) // immediately add self to "has" list of message
           let peers = Object.keys(easypeers.wires)
-          peers.forEach(peer => {
-            if (!message.has.includes(peer)) {
-              // Clone the message before manipulating it
-              let messageCopy = JSON.parse(JSON.stringify(message))
-              // Add the peer to message.has immediately before sending the message
-              messageCopy.has.push(peer)
-              limiter.schedule(() => {
-                easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(messageCopy))
+          for(let i = 0; i < peers.length; i++) {
+            let peer = peers[i]
+            if (peer === message.from || message.has.includes(peer)) {
+              if(easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
+            } else {
+              if(easypeers.opts.debug) console.log(`Sending message ${message.id} to peer ${peer}`)
+              if (!sentMessages[message.id]) {
+                sentMessages[message.id] = []
+              }
+              sentMessages[message.id].push(peer)
+              easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message), () => {
+                // Assuming 'messageAck' is the event for receiving an acknowledgment
+                easypeers.wires[peer].on('messageAck', (ack) => {
+                  if (ack === message.id) {
+                    if(easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
+                  }
+                })
               })
             }
-          })
-      
+          }
         } catch (err) {
           // handle error
         }
-      
-        if (message.from !== easypeers.address) {
-          easypeers.emit('message', message)
-        }
-      }
+      }   
     }
 
     swEasypeers.prototype.name = 'sw_easypeers'

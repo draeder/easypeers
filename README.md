@@ -23,7 +23,7 @@ Run a local server
 > npm run serve
 ```
 
-Run a local peer instance.
+Run a local peer instance on node.
 ```js
 > npm run start
 ```

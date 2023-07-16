@@ -28,6 +28,7 @@ const Easypeers = function(identifier, args){
   easypeers.removeAllListeners = events.removeAllListeners.bind(events)
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
+  easypeers.coverage = easypeers.opts.coverage || 0.33
   if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
   easypeers.identifier = easypeers.opts.identifer 
@@ -72,41 +73,34 @@ const Easypeers = function(identifier, args){
     console.error('Error', err)
   })
 
-  // Unused functions to get the peerId of the furthest and closest connected peer
-  // May use them at a later date
-  function getFurthestPeer(peerId) {
-    let diff = Object.keys(easypeers.wires).filter(x => {
-      return x
-    })
-    
-    let furthest
-    if(diff.length > 0 && easypeers.address < diff[0]) {
-      furthest = [diff[0]]
-    } else {
-      furthest = diff.filter(v => {
-        return v > easypeers.address
-      })
+  // Function to calculate distance
+  function calculateDistance(hash1, hash2) {
+    const hexDigits = '0123456789abcdef'
+  
+    let distance = ''
+    for (let i = 0; i < hash1.length; i++) {
+      const digit1 = hexDigits.indexOf(hash1[i])
+      const digit2 = hexDigits.indexOf(hash2[i])
+      const diff = (digit1 - digit2 + 16) % 16
+      distance += hexDigits[diff]
     }
-    
-    return furthest
+  
+    return distance
   }
   
-  function getClosestPeer(peerId){
-    let diff = Object.keys(easypeers.wires).filter(x => {
-      return x
-    })
-    
-    let closest
-    if(diff.length > 0 && easypeers.address < diff[0]) {
-      closest = [diff[0]]
-    } else {
-      closest = diff.filter(v => {
-        return v < easypeers.address
-      })
-    }
-    return closest
+  // Function to find closest peers
+  function findClosestPeers(targetPeerHash, knownPeers, maxPeers, ratio) {
+    const k = Math.round(maxPeers * ratio) // Calculate the number of closest peers based on the ratio
+    // Calculate distances
+    const distances = knownPeers.map(peer => ({ peer, distance: calculateDistance(targetPeerHash, peer) }))
+    // Sort by distance
+    distances.sort((a, b) => a.distance.localeCompare(b.distance, 'en', { numeric: true }))
+    // Get k closest peers (or less if fewer peers available)
+    const closestPeers = distances.slice(0, Math.min(k, knownPeers.length)).map(d => d.peer)
+    // Return subset of closest peers based on maxPeers
+    return closestPeers.slice(0, maxPeers)
   }
-  
+
   easypeers.wireCount = 0
 
   torrent.on("wire", function(wire) {
@@ -157,54 +151,86 @@ const Easypeers = function(identifier, args){
   }
 
   easypeers.send = (to, data) => {
-    if(!data) data = to
-    if(typeof data === 'number') data = data.toString()
+    let message = {}
+    let sendTo
+    if (to && data) {
+      sendTo = to
+    }
+    if (data === undefined) {
+      data = to
+    }
+    if (typeof data === 'number') {
+      data = data.toString()
+    }
     data = data.toString()
   
-    let message = {}
-
-    if(!isNaN(data)) {
+    if (!isNaN(data)) {
       message = {
-        id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
+        id: crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random(),
         has: Object.keys(easypeers.wires),
         message: data,
       }
-    } else if(isValidJSON(data)) {
+    } else if (isValidJSON(data)) {
       try {
         message = JSON.parse(data)
         message.has = Object.keys(easypeers.wires)
-        message.id = crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random()
-      }
-      catch (err) {
+        message.id = crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random()
+      } catch (err) {
         console.error(err)
       }
     } else {
       message = {
-        id: crypto.createHash('sha1').update(data, 'binary').digest('hex')+Math.random(),
+        id: crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random(),
         has: Object.keys(easypeers.wires),
         message: data,
       }
     }
-
+  
     message.from = easypeers.address
-
+  
     message.certificate = {
       id: zerok.proof(message.id),
       from: zerok.proof([message.from]),
       message: zerok.proof(message.message),
-      pubkey: zerok.keypair.publicKey
+      pubkey: zerok.keypair.publicKey,
     }
-
-    for(let wire in easypeers.wires){
-      try{
-        let w = easypeers.wires[wire]
-        if(w)
-        easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
-      } catch (e) {
-        // ignore for now
+  
+    if (easypeers.opts.debug) console.debug('sendTo: ' + sendTo)
+    if (sendTo) {
+      // Direct messaging to specific peer(s)
+      message.to = sendTo
+      let knownPeers = Object.keys(easypeers.wires)
+      let closePeers = findClosestPeers(message.to, knownPeers, easypeers.maxPeers, easypeers.coverage)
+      if (easypeers.debug) console.debug('Sending direct message to ' + message.to + ' via ' + closePeers)
+      for (let wire of closePeers) {
+        try {
+          if (easypeers.wires[wire]) {
+            easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
+            if (easypeers.opts.debug) console.log('Sent message to: ' + wire) // Added logging here
+          }
+        } catch (e) {
+          if (easypeers.debug) console.error(e)
+        }
+      }
+    } else {
+      // Broadcast messaging to all peers
+      let knownPeers = Object.keys(easypeers.wires)
+      if (easypeers.debug) console.debug('Sending broadcast message to all peers')
+      for (let wire of knownPeers) {
+        try {
+          if (easypeers.wires[wire]) {
+            easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
+            if (easypeers.opts.debug) console.log('Sent message to: ' + wire) // Added logging here
+          }
+        } catch (e) {
+          if (easypeers.debug) console.error(e)
+        }
       }
     }
   }
+  
+  
+  
   
   setInterval(()=>{
     torrent.announce[opts.announce]
@@ -226,37 +252,95 @@ const Easypeers = function(identifier, args){
         easypeers.emit('connect', wire.peerId)
       }
 
-      
       this.onMessage = function(message) {
         message = message.toString()
         try {
           message = message.substring(message.indexOf(':') + 1)
-          message = JSON.parse(message)
+          message = JSON.parse(message, (key, value) => {
+            // Check if the value is a string with backticks around it
+            if (typeof value === 'string' && value.startsWith('`') && value.endsWith('`')) {
+              // Remove the backticks and check if the stripped value is a valid JSON object
+              const strippedValue = value.slice(1, -1)
+              try {
+                const parsedObject = JSON.parse(strippedValue)
+                if (typeof parsedObject === 'object' && parsedObject !== null) {
+                  return parsedObject // Convert back to object
+                }
+              } catch {
+                // Ignore the value if it's not a valid JSON object
+              }
+            }
+            return value
+          })
       
           if (
-            !zerok.verify(message.id, message.certificate.id, message.certificate.pubkey)
-            || !zerok.verify(message.from, message.certificate.from, message.certificate.pubkey)
-            || !zerok.verify(message.message, message.certificate.message, message.certificate.pubkey)
+            !zerok.verify(message.id, message.certificate.id, message.certificate.pubkey) ||
+            !zerok.verify(message.from, message.certificate.from, message.certificate.pubkey) ||
+            !zerok.verify(message.message, message.certificate.message, message.certificate.pubkey)
           ) {
             return
           }
       
           if (!seenMessages[message.id]) {
             seenMessages[message.id] = true
-            easypeers.emit('message', message)
           } else {
-            if(easypeers.opts.debug) console.log(`Duplicate message ${message.id} received, ignoring`)
+            if (easypeers.opts.debug) console.log(`Duplicate message ${message.id} received, ignoring`)
             return
           }
       
+          // Check if the message has a 'to' field containing the local peer's address
+          if (message.to) {
+            if(!Array.isArray(message.to)) message.to = [message.to]
+            if (message.to.includes(easypeers.address)) {
+              // Process direct message
+              if (easypeers.opts.debug) console.log(`Received direct message from ${message.from}:`, message.message)
+              // Emit a 'directMessage' event with the direct message
+              easypeers.emit('message', {
+                from: message.from,
+                message: message.message
+              })
+              return // Stop processing further for direct messages
+            } else {
+              // If the current peer is not the intended recipient, only forward the message without emitting it
+              message.has.push(easypeers.address) // immediately add self to "has" list of message
+              let peers = Object.keys(easypeers.wires)
+              for (let i = 0; i < peers.length; i++) {
+                let peer = peers[i]
+                if (peer === message.from || message.has.includes(peer)) {
+                  if (easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
+                } else {
+                  if (easypeers.opts.debug) console.log(`Forwarding message ${message.id} to peer ${peer}`)
+                  if (!sentMessages[message.id]) {
+                    sentMessages[message.id] = []
+                  }
+                  sentMessages[message.id].push(peer)
+                  easypeers.wires[peer].extended('sw_easypeers', JSON.stringify(message), () => {
+                    // Assuming 'messageAck' is the event for receiving an acknowledgment
+                    easypeers.wires[peer].on('messageAck', (ack) => {
+                      if (ack === message.id) {
+                        if (easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
+                      }
+                    })
+                  })
+                }
+              }
+              return
+            }
+          }
+      
+          // If the message does not have a 'to' property or if it's not an array,
+          // emit the message and forward it to other peers
+          if (easypeers.opts.debug) console.log(`Received message from ${message.from}:`, message.message)
+          easypeers.emit('message', message)
+      
           message.has.push(easypeers.address) // immediately add self to "has" list of message
           let peers = Object.keys(easypeers.wires)
-          for(let i = 0; i < peers.length; i++) {
+          for (let i = 0; i < peers.length; i++) {
             let peer = peers[i]
             if (peer === message.from || message.has.includes(peer)) {
-              if(easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
+              if (easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
             } else {
-              if(easypeers.opts.debug) console.log(`Sending message ${message.id} to peer ${peer}`)
+              if (easypeers.opts.debug) console.log(`Forwarding message ${message.id} to peer ${peer}`)
               if (!sentMessages[message.id]) {
                 sentMessages[message.id] = []
               }
@@ -265,7 +349,7 @@ const Easypeers = function(identifier, args){
                 // Assuming 'messageAck' is the event for receiving an acknowledgment
                 easypeers.wires[peer].on('messageAck', (ack) => {
                   if (ack === message.id) {
-                    if(easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
+                    if (easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
                   }
                 })
               })
@@ -274,9 +358,12 @@ const Easypeers = function(identifier, args){
         } catch (err) {
           // handle error
         }
-      }   
+      }
+      
+      
+      
     }
-
+    
     swEasypeers.prototype.name = 'sw_easypeers'
     return swEasypeers
   }

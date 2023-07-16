@@ -12,6 +12,8 @@ Works in both node and the browser!
 
 > Due to an unresolvble issue with the [node-wrtc](https://github.com/node-webrtc/node-webrtc) library (inexplicable segmentation faults), the node instances are now headless instances of puppeteer. Modifications to the API code are done in `examples\server\public\index.html`.
 
+> The current version has introduced a number of improvements as well as changes to usage. A documentation update is forthcoming.
+
 ## Install
 ```
 npm i easypeers

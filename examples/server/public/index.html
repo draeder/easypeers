@@ -1,5 +1,5 @@
 <p>Easypeers</p>
-<script src='https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js'></script>
+<script src="/index.js"></script>
 
 <script>
 
@@ -11,6 +11,8 @@ const easypeers = new Easypeers('Some unique topic', {
   tracker: 'ws://localhost:8000',
   debug: false,
 })
+
+console.log('identifier ' + easypeers.identifier)
 
 easypeers.on('message', data => {
   if(!data) return

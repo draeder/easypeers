@@ -10,15 +10,15 @@ EventEmitter.defaultMaxListeners = 25
 
 const PREFIX = 'easypeers-'
 
-const Easypeers = function(identifier, args){
+const Easypeers = function(identifier, args) {
   let easypeers = this
 
   let zerok = new Zerok(256)
 
-  if(typeof identifier === 'object'){
-    easypeers.opts = {...identifier}
+  if (typeof identifier === 'object') {
+    easypeers.opts = { ...identifier }
   } else {
-    easypeers.opts = {...args}
+    easypeers.opts = { ...args, identifier }
   }
 
   const events = new EventEmitter()
@@ -31,10 +31,13 @@ const Easypeers = function(identifier, args){
 
   easypeers.maxPeers = easypeers.opts.maxPeers || 6
   easypeers.coverage = easypeers.opts.coverage || 0.33
-  if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
+  if (easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = crypto.createHash('sha1').update(PREFIX+easypeers.opts.identifier).digest().toString('hex')
-    // || crypto.createHash('sha1').update(PREFIX+crypto.randomBytes(20).toString('hex')).digest().toString('hex')
+
+  easypeers.identifier = crypto
+    .createHash('sha1')
+    .update(PREFIX + (typeof identifier === 'object' ? identifier.identifier : identifier))
+    .digest('hex')
   easypeers.address = easypeers.opts.address || crypto.randomBytes(20).toString('hex')
 
 

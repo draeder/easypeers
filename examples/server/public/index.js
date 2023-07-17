@@ -33,9 +33,8 @@ const Easypeers = function(identifier, args){
   easypeers.coverage = easypeers.opts.coverage || 0.33
   if(easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.identifier = easypeers.opts.identifer 
-    || crypto.createHash('sha1').update(PREFIX+easypeers.opts.identifier).digest().toString('hex')
-    || crypto.createHash('sha1').update(PREFIX+crypto.randomBytes(20).toString('hex')).digest().toString('hex')
+  easypeers.identifier = crypto.createHash('sha1').update(PREFIX+easypeers.opts.identifier).digest().toString('hex')
+    // || crypto.createHash('sha1').update(PREFIX+crypto.randomBytes(20).toString('hex')).digest().toString('hex')
   easypeers.address = easypeers.opts.address || crypto.randomBytes(20).toString('hex')
 
 

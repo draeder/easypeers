@@ -33,6 +33,7 @@ const Easypeers = function(identifier, args) {
   easypeers.coverage = easypeers.opts.coverage || 0.33
   if (easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
+  easypeers.webtorrentOpts = easypeers.opts.webtorrentOpts
 
   easypeers.identifier = crypto
     .createHash('sha1')

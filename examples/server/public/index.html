@@ -12,8 +12,6 @@ const easypeers = new Easypeers('Some unique topic', {
   debug: false,
 })
 
-console.log('identifier ' + easypeers.identifier)
-
 easypeers.on('message', data => {
   if(!data) return
   console.log(data.message.toString().trim())

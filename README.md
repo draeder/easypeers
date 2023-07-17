@@ -81,35 +81,81 @@ Easypeers now uses Zero Knowledge Proof for swarm identification, sender authent
 # API Usage
 ## Node
 ### Example
+> The native `node-webrtc` library used by webtorrent and simple-peer may cause segmentation fault errors. Check out the nodepeer.js example in `examples/nodepeer.js` for a workaround.
+
 ```js
 const Easypeers = require('easypeers')
 
 const easypeers = new Easypeers('Some unique topic', {
-  maxPeers: 6
+  maxPeers: 6,
+  coverage: 0.1667,
+  bitLength: 64,
+  tracker: 'ws://localhost:8000',
+  debug: false,
 })
-
-console.log('My address:', easypeers.address)
 
 easypeers.on('message', data => {
-  console.log(data.message.trim())
+  if(!data) return
+  console.log(data.message.toString().trim())
+  // console.log(JSON.stringify(data))
+  // console.log(Object.keys(data.has).length)
+  // if(easypeers.isValidJSON(data.message)) {
+  //  let dataObj = JSON.parse(data.message)
+  //  console.log(dataObj)
+  // }
 })
 
-easypeers.on('connect', peer => {
+easypeers.once('connect', peer => {
+  // Do something with connect events like:
   console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  console.log("Swarm id: " +  easypeers.identifier)
+  console.log('My address: ' + easypeers.address)
+  console.log('Connected to Easypeers')
 })
 
 easypeers.on('disconnect', peer => {
-  console.log('Peer disconnected!', peer)
-})
-
-// Send messages to peers from the terminal
-process.stdin.on('data', data => {
-  easypeers.send(data)
+  // Do something with disconnect events like:
+  // console.log('Peer disconnected!', peer)
 })
 ```
 
 ## Browser
-> CDN script tag coming soon
+```html
+<script src='https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js'></script>
+<script>
+const easypeers = new Easypeers('Some unique topic', {
+  maxPeers: 6,
+  coverage: 0.1667,
+  bitLength: 64,
+  tracker: 'ws://localhost:8000',
+  debug: false,
+})
+
+easypeers.on('message', data => {
+  if(!data) return
+  console.log(data.message.toString().trim())
+  // console.log(JSON.stringify(data))
+  // console.log(Object.keys(data.has).length)
+  // if(easypeers.isValidJSON(data.message)) {
+  //  let dataObj = JSON.parse(data.message)
+  //  console.log(dataObj)
+  // }
+})
+
+easypeers.once('connect', peer => {
+  // Do something with connect events like:
+  console.log('Peer connected!', peer, '\r\nWires:', easypeers.wireCount)
+  console.log("Swarm id: " +  easypeers.identifier)
+  console.log('My address: ' + easypeers.address)
+  console.log('Connected to Easypeers')
+})
+
+easypeers.on('disconnect', peer => {
+  // Do something with disconnect events like:
+  // console.log('Peer disconnected!', peer)
+})
+</script>
+```
 
 # Methods
 ## `easypeers.send([string])`

@@ -10,31 +10,40 @@ Connect peers together based on a shared topic and send direct(<== work in progr
 
 Works in both node and the browser!
 
-> Due to an unresolvble issue with the [node-wrtc](https://github.com/node-webrtc/node-webrtc) library (inexplicable segmentation faults), the node instances are now headless instances of puppeteer. Modifications to the API code are done in `examples\server\public\index.html`.
+> Due to an unresolvble issue with the [node-wrtc](https://github.com/node-webrtc/node-webrtc) library (inexplicable segmentation faults), the node instances are now headless instances of a browser. Modifications to the API code are done in `examples\server\public\index.html`.
 
-> The current version has introduced a number of improvements as well as changes to usage. A documentation update is forthcoming.
+> The current version has introduced a number of improvements as well as changes to usage. An update to API documentation is forthcoming.
 
 ## Install
 ```
 npm i easypeers
 ```
-## Run the examples
+## Usage
 ### Node
-Run a local server
+Run a local node peer
+
 ```js
-> npm run serve
+> npm start
 ```
 
-Run a local peer instance on node.
-```js
-> npm run start
-```
+This creates a an express server which serves up the files in `examples/server/public`. The instance also acts as a peer on the network.
+
 Use the terminal to send messages and recieve messages between peers.
 
 ### Browser
-With your local server running, browse to `http://localhost:3000`.
+Once a node peer is running you may connect to it in the browser with `http://localhost:3000`. 
 
-Use the browser developer tools console to send messages: `easypeers.send('your message')`
+Alternatively, you may create a non-peer node instance that your browser can talk to on port 3000 by using `npm run serve`. 
+
+Note, if you are running a node peer already, the instance will crash because port 3000 will already be in use on that node peer instance.
+
+Then, use the browser developer tools console to send messages: `easypeers.send('your message')`
+
+Alternatively, you may also add the CDN script tag to your html file, which works without the need to host on a server.
+
+```html
+<script src='https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js'></script>
+```
 
 ## Partial Mesh
 > A partial mesh helps minimize peer connections per peer. This reduces load.
@@ -54,9 +63,9 @@ To send a message that you want to later be serialized as a parsable object, you
 ```
 Then remove the backticks on the receiving peer(s). From there you may use `JSON.parse()`.
 
-> Direct messaging is currently under development
+Direct messaging is now fully functional and uses peer ID hash "closeness" to create a shortest path through the partial mesh.
 
-Direct messaging should be relatively trivial now that broadcast messaging works as expected. The intent is to allow for sending messages from one peer to another, or a group of others.
+Broadcast messaging also now works with shortest path routing. By adjusting the coverage ratio, it is possible to have full mesh or partial mesh, and even what amounts to token ring networking.
 
 ## Security
 > Easypeers is not secure in its current revision

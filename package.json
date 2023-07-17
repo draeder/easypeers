@@ -1,16 +1,14 @@
 {
   "name": "easypeers",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Easy *serverless* swarms of WebRTC peers over WebTorrent",
   "main": "index.js",
   "scripts": {
     "test": "mocha tests/test.js",
-    "build": "browserify index.js --standalone Easypeers -o examples/server/public/index.js",
-    "start-server": "node examples/server/index.js",
-    "watch": "nodemon --watch . --ignore examples/server/public/index.js --exec \"npm run build\"",
-    "dev": "npm run watch & npm run start-server",
-    "serve": "node examples/server/index.js",
-    "start": "nodemon --watch examples/server/public/index.js server.js"
+    "build": "browserify index.js --standalone Easypeers -o examples/server/public/index.js && cp examples/server/public/index.js dist/easypeers.dist.js",
+    "watch": "nodemon --watch . --ignore dist --ignore examples/server/public/index.js --exec \"npm run build\"",
+    "dev": "npm run watch & npm run start",
+    "start": "node examples/nodepeer.js"
   },
   "repository": {
     "type": "git",
@@ -37,8 +35,7 @@
     "zerok": "^0.0.5"
   },
   "directories": {
-    "example": "examples",
-    "test": "test"
+    "example": "examples"
   },
   "devDependencies": {
     "browserify": "^17.0.0",

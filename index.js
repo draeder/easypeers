@@ -1,7 +1,7 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 
-const Discovery = require('torrent-discovery')
+const WebTorrent = require('webtorrent')
 
 const Zerok = require('zerok')
 
@@ -32,7 +32,7 @@ const Easypeers = function(identifier, args) {
   easypeers.coverage = easypeers.opts.coverage || 0.33
   if (easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.torrentOpts = easypeers.opts.webtorrentOpts
+  easypeers.webtorrentOpts = easypeers.opts.webtorrentOpts
 
   easypeers.identifier = crypto
     .createHash('sha1')
@@ -55,7 +55,7 @@ const Easypeers = function(identifier, args) {
   easypeers.wires = {}
   let seen = {}
 
-  let client = new Discovery({dht:true, lsd:true, peerId:easypeers.address})
+  let client = new WebTorrent({dht:false, lsd:false, peerId:easypeers.address})
   
   let opts = {
     infoHash: easypeers.identifier,

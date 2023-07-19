@@ -1,7 +1,7 @@
 # Easypeers
 > Easy *serverless* swarms of WebRTC peers over WebTorrent
 
-Connect peers together based on a shared topic and send direct(<== work in progress) or broadcast messages using a gossip protocol.
+Connect peers together based on a shared topic and send direct or broadcast messages using a gossip protocol.
 
 - Partial mesh network
 - Automatic peer rebalancing

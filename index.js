@@ -1,7 +1,8 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
 
-const WebTorrent = require('webtorrent')
+const Discovery = require('torrent-discovery')
+
 const Zerok = require('zerok')
 
 EventEmitter.defaultMaxListeners = 25
@@ -31,7 +32,7 @@ const Easypeers = function(identifier, args) {
   easypeers.coverage = easypeers.opts.coverage || 0.33
   if (easypeers.maxPeers < 2) easypeers.maxPeers = 2
   easypeers.timeout = easypeers.opts.timeout || 30 * 1000
-  easypeers.webtorrentOpts = easypeers.opts.webtorrentOpts
+  easypeers.torrentOpts = easypeers.opts.webtorrentOpts
 
   easypeers.identifier = crypto
     .createHash('sha1')
@@ -54,7 +55,7 @@ const Easypeers = function(identifier, args) {
   easypeers.wires = {}
   let seen = {}
 
-  let client = new WebTorrent({dht:false, lsd:false, peerId:easypeers.address})
+  let client = new Discovery({dht:true, lsd:true, peerId:easypeers.address})
   
   let opts = {
     infoHash: easypeers.identifier,
@@ -209,7 +210,7 @@ const Easypeers = function(identifier, args) {
         try {
           if (easypeers.wires[wire]) {
             easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
-            if (easypeers.opts.debug) console.log('Sent message to: ' + wire) // Added logging here
+            if (easypeers.opts.debug) console.debug('Sent message to: ' + wire) // Added logging here
           }
         } catch (e) {
           if (easypeers.debug) console.error(e)
@@ -223,7 +224,7 @@ const Easypeers = function(identifier, args) {
         try {
           if (easypeers.wires[wire]) {
             easypeers.wires[wire].extended('sw_easypeers', JSON.stringify(message))
-            if (easypeers.opts.debug) console.log('Sent message to: ' + wire) // Added logging here
+            if (easypeers.opts.debug) console.debug('Sent message to: ' + wire) // Added logging here
           }
         } catch (e) {
           if (easypeers.debug) console.error(e)
@@ -231,9 +232,6 @@ const Easypeers = function(identifier, args) {
       }
     }
   }
-  
-  
-  
   
   setInterval(()=>{
     torrent.announce[opts.announce]
@@ -287,7 +285,7 @@ const Easypeers = function(identifier, args) {
           if (!seenMessages[message.id]) {
             seenMessages[message.id] = true
           } else {
-            if (easypeers.opts.debug) console.log(`Duplicate message ${message.id} received, ignoring`)
+            if (easypeers.opts.debug) console.debug(`Duplicate message ${message.id} received, ignoring`)
             return
           }
       
@@ -296,7 +294,7 @@ const Easypeers = function(identifier, args) {
             if(!Array.isArray(message.to)) message.to = [message.to]
             if (message.to.includes(easypeers.address)) {
               // Process direct message
-              if (easypeers.opts.debug) console.log(`Received direct message from ${message.from}:`, message.message)
+              if (easypeers.opts.debug) console.debug(`Received direct message from ${message.from}:`, message.message)
               // Emit a 'directMessage' event with the direct message
               easypeers.emit('message', {
                 from: message.from,
@@ -310,9 +308,9 @@ const Easypeers = function(identifier, args) {
               for (let i = 0; i < peers.length; i++) {
                 let peer = peers[i]
                 if (peer === message.from || message.has.includes(peer)) {
-                  if (easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
+                  if (easypeers.opts.debug) console.debug(`Skipping peer ${peer} for message ${message.id}`)
                 } else {
-                  if (easypeers.opts.debug) console.log(`Forwarding message ${message.id} to peer ${peer}`)
+                  if (easypeers.opts.debug) console.debug(`Forwarding message ${message.id} to peer ${peer}`)
                   if (!sentMessages[message.id]) {
                     sentMessages[message.id] = []
                   }
@@ -321,7 +319,7 @@ const Easypeers = function(identifier, args) {
                     // Assuming 'messageAck' is the event for receiving an acknowledgment
                     easypeers.wires[peer].on('messageAck', (ack) => {
                       if (ack === message.id) {
-                        if (easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
+                        if (easypeers.opts.debug) console.debug(`Received acknowledgment from peer ${peer} for message ${message.id}`)
                       }
                     })
                   })
@@ -333,7 +331,7 @@ const Easypeers = function(identifier, args) {
       
           // If the message does not have a 'to' property or if it's not an array,
           // emit the message and forward it to other peers
-          if (easypeers.opts.debug) console.log(`Received message from ${message.from}:`, message.message)
+          if (easypeers.opts.debug) console.debug(`Received message from ${message.from}:`, message.message)
           easypeers.emit('message', message)
       
           message.has.push(easypeers.address) // immediately add self to "has" list of message
@@ -341,9 +339,9 @@ const Easypeers = function(identifier, args) {
           for (let i = 0; i < peers.length; i++) {
             let peer = peers[i]
             if (peer === message.from || message.has.includes(peer)) {
-              if (easypeers.opts.debug) console.log(`Skipping peer ${peer} for message ${message.id}`)
+              if (easypeers.opts.debug) console.debug(`Skipping peer ${peer} for message ${message.id}`)
             } else {
-              if (easypeers.opts.debug) console.log(`Forwarding message ${message.id} to peer ${peer}`)
+              if (easypeers.opts.debug) console.debug(`Forwarding message ${message.id} to peer ${peer}`)
               if (!sentMessages[message.id]) {
                 sentMessages[message.id] = []
               }
@@ -352,7 +350,7 @@ const Easypeers = function(identifier, args) {
                 // Assuming 'messageAck' is the event for receiving an acknowledgment
                 easypeers.wires[peer].on('messageAck', (ack) => {
                   if (ack === message.id) {
-                    if (easypeers.opts.debug) console.log(`Received acknowledgment from peer ${peer} for message ${message.id}`)
+                    if (easypeers.opts.debug) console.debug(`Received acknowledgment from peer ${peer} for message ${message.id}`)
                   }
                 })
               })

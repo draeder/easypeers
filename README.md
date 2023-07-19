@@ -88,7 +88,7 @@ const Easypeers = require('easypeers')
 
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
-  coverage: 0.1667,
+  coverage: 0.33,
   bitLength: 64,
   tracker: 'ws://localhost:8000',
   debug: false,
@@ -125,7 +125,7 @@ easypeers.on('disconnect', peer => {
 <script>
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
-  coverage: 0.1667,
+  coverage: 0.33,
   bitLength: 64,
   tracker: 'ws://localhost:8000',
   debug: false,

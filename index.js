@@ -7,19 +7,36 @@ const Zerok = require('zerok')
 
 EventEmitter.defaultMaxListeners = 25
 
+function generateECDHKeys() {
+  const ecdh = crypto.createECDH('secp256k1');
+  const publicKey = ecdh.generateKeys();
+  return { ecdh, publicKey };
+}
+
+function computeSharedSecret(theirPublicKey, myECDH) {
+  const sharedSecret = myECDH.computeSecret(theirPublicKey);
+  return sharedSecret;
+}
+
+
+let pubkey = generateECDHKeys().publicKey.toString('hex')
+  
+console.log('Public Key: ' + pubkey)
+
+
 const PREFIX = 'easypeers-'
 
 const Easypeers = function(identifier, args) {
   let easypeers = this
-
-  let zerok = new Zerok(256)
-
+  
+  
   if (typeof identifier === 'object') {
     easypeers.opts = { ...identifier }
   } else {
     easypeers.opts = { ...args, identifier }
   }
-
+  
+  let zerok = new Zerok(easypeers.opts.bitlength)
   const events = new EventEmitter()
   easypeers.on = events.on.bind(events)
   easypeers.once = events.once.bind(events)
@@ -45,12 +62,6 @@ const Easypeers = function(identifier, args) {
   const hash = crypto.createHash('sha256')
   hash.update(easypeers.identifier)
   const seed = hash.digest()
-
-  // // Generate a deterministic keypair based on the seed
-  // const keyPair = ed25519.MakeKeypair(seed)
-
-  // let publicKey = keyPair.publicKey.toString('hex')
-  // let privateKey = keyPair.privateKey.toString('hex')
 
   easypeers.wires = {}
   let seen = {}
@@ -167,27 +178,16 @@ const Easypeers = function(identifier, args) {
       data = data.toString()
     }
     data = data.toString()
-  
-    if (!isNaN(data)) {
-      message = {
-        id: crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random(),
-        has: Object.keys(easypeers.wires),
-        message: data,
-      }
-    } else if (isValidJSON(data)) {
-      try {
-        message = JSON.parse(data)
-        message.has = Object.keys(easypeers.wires)
-        message.id = crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random()
-      } catch (err) {
-        console.error(err)
-      }
-    } else {
-      message = {
-        id: crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random(),
-        has: Object.keys(easypeers.wires),
-        message: data,
-      }
+    if (Buffer.isBuffer(data.message)) {
+      if(easypeers.opts.debug) console.debug('Received buffer ' + data)
+      message = Buffer.from(data.message).toString('utf8')
+    }
+    // if(Buffer.isBuffer(data)) Buffer.from(data).toString('utf-8')
+    // data = JSON.stringify(data)
+    message = {
+      id: crypto.createHash('sha1').update(data, 'binary').digest('hex') + Math.random(),
+      has: Object.keys(easypeers.wires),
+      message: data,
     }
   
     message.from = easypeers.address
@@ -202,7 +202,8 @@ const Easypeers = function(identifier, args) {
     if (easypeers.opts.debug) console.debug('sendTo: ' + sendTo)
     if (sendTo) {
       // Direct messaging to specific peer(s)
-      message.to = sendTo
+      message.to = [sendTo]
+
       let knownPeers = Object.keys(easypeers.wires)
       let closePeers = findClosestPeers(message.to, knownPeers, easypeers.maxPeers, easypeers.coverage)
       if (easypeers.debug) console.debug('Sending direct message to ' + message.to + ' via ' + closePeers)
@@ -237,7 +238,6 @@ const Easypeers = function(identifier, args) {
     torrent.announce[opts.announce]
   }, easypeers.timeout)
 
-  let last
   let sentMessages = {}
   let seenMessages = {}
   let _easypeers = () => {
@@ -254,26 +254,27 @@ const Easypeers = function(identifier, args) {
       }
 
       this.onMessage = function(message) {
-        message = message.toString()
+        if (easypeers.opts.debug) console.debug('Received raw message:', message);
+        message = message.toString();
+        if (easypeers.opts.debug) console.debug(message);
         try {
-          message = message.substring(message.indexOf(':') + 1)
+          message = message.substring(message.indexOf(':') + 1);
+          if (easypeers.opts.debug) console.debug('Parsed message before conversion:', message);
           message = JSON.parse(message, (key, value) => {
-            // Check if the value is a string with backticks around it
             if (typeof value === 'string' && value.startsWith('`') && value.endsWith('`')) {
-              // Remove the backticks and check if the stripped value is a valid JSON object
-              const strippedValue = value.slice(1, -1)
+              const strippedValue = value.slice(1, -1);
               try {
-                const parsedObject = JSON.parse(strippedValue)
+                const parsedObject = JSON.parse(strippedValue);
                 if (typeof parsedObject === 'object' && parsedObject !== null) {
-                  return parsedObject // Convert back to object
+                  return parsedObject; // Convert back to object
                 }
               } catch {
                 // Ignore the value if it's not a valid JSON object
               }
             }
-            return value
-          })
-      
+            return value;
+          });
+
           if (
             !zerok.verify(message.id, message.certificate.id, message.certificate.pubkey) ||
             !zerok.verify(message.from, message.certificate.from, message.certificate.pubkey) ||
@@ -288,7 +289,7 @@ const Easypeers = function(identifier, args) {
             if (easypeers.opts.debug) console.debug(`Duplicate message ${message.id} received, ignoring`)
             return
           }
-      
+                  
           // Check if the message has a 'to' field containing the local peer's address
           if (message.to) {
             if(!Array.isArray(message.to)) message.to = [message.to]
@@ -298,7 +299,7 @@ const Easypeers = function(identifier, args) {
               // Emit a 'directMessage' event with the direct message
               easypeers.emit('message', {
                 from: message.from,
-                message: message.message
+                message: Buffer.from(message.message).toString('utf-8')
               })
               return // Stop processing further for direct messages
             } else {
@@ -328,11 +329,15 @@ const Easypeers = function(identifier, args) {
               return
             }
           }
-      
+
           // If the message does not have a 'to' property or if it's not an array,
           // emit the message and forward it to other peers
           if (easypeers.opts.debug) console.debug(`Received message from ${message.from}:`, message.message)
-          easypeers.emit('message', message)
+          if (typeof message.message === 'string') {
+            if (Buffer.isBuffer(message.mmessage)) message.message = message.message.toString('utf-8')
+            easypeers.emit('message', message)
+          }
+          
       
           message.has.push(easypeers.address) // immediately add self to "has" list of message
           let peers = Object.keys(easypeers.wires)

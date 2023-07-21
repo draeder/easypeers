@@ -1,8 +1,16 @@
-<p>Easypeers</p>
-<script src="https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js"></script>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Easypeers</title>
+</head>
+<body>
+  <p>Easypeers</p>
+  <input type="hidden" id="hiddenInput" data-value="">
+</body>
+<script src='https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js'></script>
+</html>
 
 <script>
-
 const easypeers = new Easypeers('Some unique topic', {
   maxPeers: 6,
   coverage: 0.33,
@@ -13,8 +21,7 @@ const easypeers = new Easypeers('Some unique topic', {
 })
 
 easypeers.on('message', data => {
-  if(!data) return
-  console.log(data.message.toString().trim())
+  console.log(data.message)
   // console.log(JSON.stringify(data))
   // console.log(Object.keys(data.has).length)
   // if(easypeers.isValidJSON(data.message)) {

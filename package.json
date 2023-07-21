@@ -1,6 +1,6 @@
 {
   "name": "easypeers",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Easy *serverless* swarms of WebRTC peers over WebTorrent",
   "main": "index.js",
   "scripts": {
@@ -35,7 +35,8 @@
     "zerok": "^0.0.5"
   },
   "directories": {
-    "example": "examples"
+    "example": "examples",
+    "test": "test"
   },
   "devDependencies": {
     "browserify": "^17.0.0",

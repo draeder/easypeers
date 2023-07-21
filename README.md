@@ -158,8 +158,11 @@ easypeers.on('disconnect', peer => {
 ```
 
 # Methods
-## `easypeers.send([string])`
-Send messages to other peers
+## `easypeers.send(message[string])`
+Send message to all peers in the mesh with hearest address routing
+
+## `eeasypeers.send(address[string], message[string])`
+Send direct message to destination address address with nearest address routing
 
 # Events
 ## `easypeers.on('connect', peer => callback)`
@@ -182,10 +185,10 @@ Stops listening for new messages
 
 # Properties
 ## `easypeers.identifier` [[string]]
-Set or return the configured swarm identifier. This must be a sha1 hash and is created by default from the passed in topic string.
+Set or return the configured swarm identifier. This must be a sha1 hash and is created by default from the passed in topic string
 
 ## `easypeers.address`
-Set or return the configured peer ID. This must be a sha1 hash and is created by default.
+Set or return the configured peer ID. This must be a sha1 hash and is created by default
 
 ## `easypeers.maxPeers` [[integer]]
 Set or return the configured maxPeers. The default is 6.

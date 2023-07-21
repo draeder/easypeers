@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+    <style>
+        .chat-box {
+            height: 400px;
+            width: 600px;
+            border: 1px solid black;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container"></div>
+    <input type="text" id="peer-input" placeholder="Type peer ID for direct message...">
+    <input type="text" id="message-input" placeholder="Type your message...">
+    <button id="send-button">Send</button>
+
+    <script src='https://cdn.jsdelivr.net/gh/draeder/easypeers/dist/easypeers.dist.js'></script>
+    <script>
+        // Initialize Easypeers
+        var easypeers = new Easypeers('Some unique topic', {
+            maxPeers: 6,
+            coverage: 0.33,
+            bitLength: 64,
+            tracker: 'ws://localhost:8000',
+            debug: false,
+        });
+
+        var connectedPeers = [];
+
+        // Get DOM elements
+        var chatContainer = document.getElementById('chat-container');
+        var peerInput = document.getElementById('peer-input');
+        var messageInput = document.getElementById('message-input');
+        var sendButton = document.getElementById('send-button');
+
+        // Function to display message
+        function displayMessage(message, isOutbound) {
+            var messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.innerText = (isOutbound ? '< ' : '> ') + message;
+            chatContainer.appendChild(messageElement);
+            chatContainer.scrollTop = chatContainer.scrollHeight; // scroll to bottom
+        }
+
+        // Function to send message
+        function sendMessage() {
+            var peer = peerInput.value;
+            var message = messageInput.value;
+            if (peer) {
+                easypeers.send(peer, message); // send direct message
+                displayMessage('To ' + peer + ': ' + message, true); // display outbound message
+            } else {
+                easypeers.send(message); // send broadcast message
+                displayMessage(message, true); // display outbound message
+            }
+            messageInput.value = '';
+        }
+
+        // Event listener for send button
+        sendButton.addEventListener('click', sendMessage);
+
+        // Event listener for enter key
+        messageInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+                event.preventDefault(); // prevent newline character from being entered in textarea
+            }
+        });
+
+        // Event listener for incoming messages
+        easypeers.on('message', function(data) {
+            displayMessage(data.message, false); // display inbound message
+        });
+
+        // Keep track of connected peers and log them to the console
+        easypeers.on('connect', function(peer) {
+            connectedPeers.push(peer);
+            console.log('Peer connected: ' + peer);
+            console.log('Connected peers:', connectedPeers);
+        });
+        easypeers.on('disconnect', function(peer) {
+            var index = connectedPeers.indexOf(peer);
+            if (index > -1) {
+                connectedPeers.splice(index, 1);
+            }
+            console.log('Peer disconnected: ' + peer);
+            console.log('Connected peers:', connectedPeers);
+        });
+    </script>
+</body>
+</html>

@@ -20,6 +20,33 @@ function computeSharedSecret(theirPublicKey, myECDH) {
   return sharedSecret;
 }
 
+function encryptWithSharedSecret(data, sharedSecret) {
+  // Generate a random initialization vector
+  const iv = crypto.randomBytes(16);
+
+  // Create a cipher using our secret and the AES-256-CBC encryption algorithm
+  const cipher = crypto.createCipheriv('aes-256-cbc', sharedSecret.slice(0, 32), iv);
+
+  // Encrypt the data
+  let encrypted = cipher.update(data, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  // Return the initialization vector and the encrypted data
+  return { iv: iv.toString('hex'), encryptedData: encrypted };
+}
+
+function decryptWithSharedSecret(encrypted, sharedSecret, iv) {
+  // Create a decipher with the shared secret and the IV
+  const decipher = crypto.createDecipheriv('aes-256-cbc', sharedSecret.slice(0, 32), Buffer.from(iv, 'hex'));
+
+  // Decrypt the data
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  // Return the decrypted data
+  return decrypted;
+}
+
 
 let pubkey = generateECDHKeys().publicKey.toString('hex')
   
